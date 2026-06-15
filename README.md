@@ -14,6 +14,19 @@ An Electron application with React and TypeScript
 $ npm install
 ```
 
+#### Known issue: Electron 42.0.0 install on macOS
+
+On macOS, `npm install` can finish without creating `node_modules/electron/path.txt`.
+When this happens, `npm run dev` fails with `Error: Electron uninstall`.
+
+Run the Electron installer explicitly after `npm install`:
+
+```bash
+$ ELECTRON_CACHE="$PWD/.electron-cache" node node_modules/electron/install.js
+```
+
+Then verify `node_modules/electron/path.txt` exists before starting the app.
+
 ### Development
 
 ```bash
