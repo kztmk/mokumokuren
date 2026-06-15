@@ -1,30 +1,44 @@
 name: CI
 
 on:
-  pull_request:
   push:
-    branches:
-      - main
+    branches: ['**']
+  pull_request:
+    branches: ['**']
 
 jobs:
-  build:
-    runs-on: macos-latest
+  build-and-lint:
+    name: Lint & Build
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node.js 24
         uses: actions/setup-node@v4
         with:
-          node-version-file: .nvmrc
-          cache: npm
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Cache Electron binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/electron
+          key: electron-${{ hashFiles('package.json') }}-${{ runner.os }}
+          restore-keys: |
+            electron-
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Ensure Electron binary is installed
-        run: ELECTRON_CACHE="$PWD/.electron-cache" node node_modules/electron/install.js
+      - name: Electron postinstall (path.txt workaround)
+        run: node node_modules/electron/install.js || true
+        env:
+          ELECTRON_CACHE: ~/.cache/electron
+
+      - name: Lint
+        run: npm run lint
 
       - name: Build
         run: npm run build
