@@ -1,18 +1,85 @@
-import { app, shell, BrowserWindow, ipcMain, WebContentsView, session } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, WebContentsView, type Session } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import { getOrCreateSession, applyUAToSession, type ServiceName } from './sessionManager'
+import { addAccount, getAccounts, type Account } from './accountStore'
+import { isEncryptionAvailable } from './safeStorageWrapper'
+import { runIsolationHarness } from './isolationHarness'
 
-const SNS_VIEWS = [
-  { partition: 'persist:x-proto', url: 'https://x.com' },
-  { partition: 'persist:bluesky-proto', url: 'https://bsky.app' },
-  { partition: 'persist:threads-proto', url: 'https://www.threads.net' },
+const SNS_URLS: Record<ServiceName, string> = {
+  x: 'https://x.com',
+  bluesky: 'https://bsky.app',
+  threads: 'https://www.threads.net',
+}
+
+const ALLOWED_HOSTS: Record<ServiceName, string[]> = {
+  x: ['x.com', 'twitter.com'],
+  bluesky: ['bsky.app', 'bsky.social'],
+  threads: ['threads.net', 'instagram.com'],
+}
+
+const PROTOTYPE_ACCOUNTS: Parameters<typeof addAccount>[0][] = [
+  {
+    service: 'x',
+    displayName: 'X Proto',
+    username: 'proto',
+    avatarUrl: '',
+    order: 0,
+    isVisible: true,
+  },
+  {
+    service: 'bluesky',
+    displayName: 'Bluesky Proto',
+    username: 'proto',
+    avatarUrl: '',
+    order: 1,
+    isVisible: true,
+  },
+  {
+    service: 'threads',
+    displayName: 'Threads Proto',
+    username: 'proto',
+    avatarUrl: '',
+    order: 2,
+    isVisible: true,
+  },
 ]
-
-const CHROME_UA = `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`
 
 const SIDEBAR_W = 72
 const HEADER_H = 40
+
+function getStartupAccounts(): Account[] {
+  const accounts = getAccounts()
+  const startupAccounts =
+    accounts.length > 0 ? accounts : PROTOTYPE_ACCOUNTS.map((account) => addAccount(account))
+
+  return startupAccounts
+    .filter((account) => account.isVisible)
+    .sort((a, b) => a.order - b.order)
+    .slice(0, 3)
+}
+
+async function isLoggedIn(ses: Session, service: string): Promise<boolean> {
+  const cookieFilters: Record<string, Electron.CookiesGetFilter[]> = {
+    x: [{ domain: '.x.com', name: 'auth_token' }],
+    bluesky: [
+      { domain: '.bsky.app', name: 'skyware-session' },
+      { domain: '.bsky.app', name: '_bsky_token' },
+    ],
+    threads: [{ domain: '.threads.net', name: 'sessionid' }],
+  }
+
+  const filters = cookieFilters[service] ?? []
+
+  for (const filter of filters) {
+    if ((await ses.cookies.get(filter)).length > 0) {
+      return true
+    }
+  }
+
+  return false
+}
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -27,9 +94,9 @@ function createWindow(): void {
     },
   })
 
-  const views: WebContentsView[] = SNS_VIEWS.map(({ partition, url }) => {
-    const ses = session.fromPartition(partition)
-    ses.setUserAgent(CHROME_UA)
+  const views: WebContentsView[] = getStartupAccounts().map((account) => {
+    const ses = getOrCreateSession({ service: account.service, accountId: account.id })
+    applyUAToSession(ses)
     const view = new WebContentsView({
       webPreferences: {
         session: ses,
@@ -40,7 +107,21 @@ function createWindow(): void {
       },
     })
     win.contentView.addChildView(view)
-    view.webContents.loadURL(url)
+    void isLoggedIn(ses, account.service)
+    view.webContents.loadURL(SNS_URLS[account.service])
+    const allowedHosts = ALLOWED_HOSTS[account.service] ?? []
+    view.webContents.setWindowOpenHandler(({ url }) => {
+      try {
+        const { hostname } = new URL(url)
+        if (allowedHosts.some((h) => hostname === h || hostname.endsWith('.' + h))) {
+          return { action: 'allow' }
+        }
+      } catch {
+        // invalid URL → deny
+      }
+      shell.openExternal(url)
+      return { action: 'deny' }
+    })
     return view
   })
 
@@ -85,7 +166,13 @@ app.whenReady().then(() => {
 
   ipcMain.on('ping', () => console.log('pong'))
 
+  console.log('[safeStorage] encryption available:', isEncryptionAvailable())
+
   createWindow()
+
+  if (is.dev) {
+    void runIsolationHarness()
+  }
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
