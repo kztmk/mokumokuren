@@ -56,6 +56,8 @@ export const COMPOSE_URL: Record<ServiceName, string> = {
   threads: '/intent/post',
 }
 
+export const ACTIVE_BORDER_COLOR = '#FFB200'
+
 // Fallback only. COMPOSE_URL is preferred; Phase4 wires this into navigation.
 export const POST_TRIGGER: Record<ServiceName, string> = {
   x: 'document.querySelector(\'[data-testid="tweetButtonInline"]\')?.click()',
@@ -67,18 +69,23 @@ export const SERVICE_META: Record<
   ServiceName,
   { label: string; iconId: string; badgeColor: string; activeBorderColor: string }
 > = {
-  x: { label: 'X', iconId: 'x-logo', badgeColor: '#000000', activeBorderColor: '#1D9BF0' },
+  x: {
+    label: 'X',
+    iconId: 'x-logo',
+    badgeColor: '#000000',
+    activeBorderColor: ACTIVE_BORDER_COLOR,
+  },
   bluesky: {
     label: 'Bluesky',
     iconId: 'bsky-logo',
     badgeColor: '#0085FF',
-    activeBorderColor: '#1D9BF0',
+    activeBorderColor: ACTIVE_BORDER_COLOR,
   },
   threads: {
     label: 'Threads',
     iconId: 'threads-logo',
     badgeColor: '#000000',
-    activeBorderColor: '#1D9BF0',
+    activeBorderColor: ACTIVE_BORDER_COLOR,
   },
 }
 
@@ -88,6 +95,8 @@ export interface ColumnDescriptor {
   username: string | null
   x: number
   width: number
+  height: number
+  borderW: number
 }
 
 export interface ColumnLayoutSnapshot {

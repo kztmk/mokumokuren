@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { ColumnHeader } from './components/ColumnHeader'
-import type { ColumnDescriptor } from './services'
+import { ACTIVE_BORDER_COLOR, type ColumnDescriptor } from './services'
+
+const HEADER_H = 40
 
 function App(): React.JSX.Element {
   const [columns, setColumns] = useState<ColumnDescriptor[]>([])
@@ -46,20 +48,36 @@ function App(): React.JSX.Element {
         onComposePost={handleComposePost}
         onRequestAddAccount={handleRequestAddAccount}
       />
-      {columns.map((col) => (
-        <ColumnHeader
-          key={col.accountId}
-          columnId={col.accountId}
-          service={col.service}
-          username={col.username}
-          x={col.x}
-          width={col.width}
-          isActive={col.accountId === activeColumnId}
-          onSetActive={handleSetActive}
-          onClose={handleClose}
-          onSetVisible={handleSetVisible}
-        />
-      ))}
+      {columns.map((col) => {
+        const isActive = col.accountId === activeColumnId
+        return (
+          <div key={col.accountId}>
+            <div
+              style={{
+                position: 'fixed',
+                left: col.x,
+                top: HEADER_H,
+                width: col.width,
+                height: Math.max(0, col.height - HEADER_H),
+                backgroundColor: isActive ? ACTIVE_BORDER_COLOR : 'transparent',
+                zIndex: 10,
+                pointerEvents: 'none',
+              }}
+            />
+            <ColumnHeader
+              columnId={col.accountId}
+              service={col.service}
+              username={col.username}
+              x={col.x}
+              width={col.width}
+              isActive={isActive}
+              onSetActive={handleSetActive}
+              onClose={handleClose}
+              onSetVisible={handleSetVisible}
+            />
+          </div>
+        )
+      })}
     </>
   )
 }

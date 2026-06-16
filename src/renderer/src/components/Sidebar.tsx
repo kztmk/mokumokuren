@@ -1,4 +1,5 @@
 import {
+  ACTIVE_BORDER_COLOR,
   type ColumnDescriptor,
   type MenuKey,
   type ServiceName,
@@ -117,7 +118,7 @@ export function Sidebar({
                 width: 36,
                 height: 36,
                 borderRadius: 18,
-                border: `2px solid ${isActive ? '#1D9BF0' : 'transparent'}`,
+                border: `2px solid ${isActive ? ACTIVE_BORDER_COLOR : 'transparent'}`,
                 background: loggedIn ? badgeColor : '#444',
                 cursor: 'pointer',
                 display: 'flex',

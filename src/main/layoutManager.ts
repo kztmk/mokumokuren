@@ -3,6 +3,7 @@ import type { ColumnDescriptor, ColumnLayoutSnapshot } from '../renderer/src/ser
 
 const SIDEBAR_W = 72
 const HEADER_H = 40
+const BORDER_W = 2 // active border inset px
 
 type ManagedView = {
   view: WebContentsView
@@ -38,16 +39,18 @@ export function applyLayout(): void {
   const columns = managedViews.map(({ view, descriptor }, index) => {
     const x = SIDEBAR_W + index * colW
     view.setBounds({
-      x,
-      y: HEADER_H,
-      width: colW,
-      height,
+      x: x + BORDER_W,
+      y: HEADER_H + BORDER_W,
+      width: Math.max(0, colW - 2 * BORDER_W),
+      height: Math.max(0, height - 2 * BORDER_W),
     })
 
     return {
       ...descriptor,
       x,
       width: colW,
+      height: winContentHeight,
+      borderW: BORDER_W,
     }
   })
 

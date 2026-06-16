@@ -1,4 +1,4 @@
-import { type ServiceName, SERVICE_META } from '../services'
+import { ACTIVE_BORDER_COLOR, type ServiceName, SERVICE_META } from '../services'
 
 type ColumnHeaderProps = {
   columnId: string
@@ -34,7 +34,7 @@ export function ColumnHeader({
         width,
         height: 40,
         background: '#111',
-        borderBottom: `2px solid ${isActive ? '#1D9BF0' : 'transparent'}`,
+        border: `2px solid ${isActive ? ACTIVE_BORDER_COLOR : 'transparent'}`,
         display: 'flex',
         alignItems: 'center',
         gap: 8,
