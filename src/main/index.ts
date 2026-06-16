@@ -6,7 +6,7 @@ import { getOrCreateSession, applyUAToSession, type ServiceName } from './sessio
 import { addAccount, getAccounts, type Account } from './accountStore'
 import { isEncryptionAvailable } from './safeStorageWrapper'
 import { runIsolationHarness } from './isolationHarness'
-import { initLayoutManager } from './layoutManager'
+import { applyLayout, initLayoutManager } from './layoutManager'
 
 const SNS_URLS: Record<ServiceName, string> = {
   x: 'https://x.com',
@@ -146,6 +146,7 @@ function createWindow(): void {
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'))
   }
+  win.webContents.on('did-finish-load', () => applyLayout())
 }
 
 app.whenReady().then(() => {
