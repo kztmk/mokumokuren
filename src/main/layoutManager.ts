@@ -7,7 +7,7 @@ const BORDER_W = 2 // active border inset px
 
 type ManagedView = {
   view: WebContentsView
-  descriptor: Omit<ColumnDescriptor, 'x' | 'width'>
+  descriptor: Omit<ColumnDescriptor, 'x' | 'width' | 'height' | 'borderW'>
 }
 
 let currentWindow: BrowserWindow | null = null
