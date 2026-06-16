@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import ElectronStore, { type Schema } from 'electron-store'
+import type { JSONSchema } from 'json-schema-typed'
 
 export type AccountService = 'x' | 'bluesky' | 'threads'
 
@@ -18,7 +19,7 @@ type AccountStoreSchema = {
   accounts: Account[]
 }
 
-const accountJsonSchema = {
+const accountJsonSchema: JSONSchema = {
   type: 'object',
   required: [
     'id',
