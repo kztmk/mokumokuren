@@ -10,7 +10,7 @@ import {
 
 const HEADER_H = 40
 type NavState = { canGoBack: boolean; canGoForward: boolean }
-type AccountInfo = { username: string | null; avatarUrl: string | null }
+type AccountInfo = { username: string | null; avatarUrl: string | null; loggedIn: boolean }
 
 function App(): React.JSX.Element {
   const [columns, setColumns] = useState<ColumnDescriptor[]>([])
@@ -48,7 +48,11 @@ function App(): React.JSX.Element {
     window.electronAPI.onAccountsChanged((info) => {
       setAccountInfos((prev) => ({
         ...prev,
-        [info.columnId]: { username: info.username, avatarUrl: info.avatarUrl },
+        [info.columnId]: {
+          username: info.username,
+          avatarUrl: info.avatarUrl,
+          loggedIn: info.loggedIn,
+        },
       }))
     })
   }, [])

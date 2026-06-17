@@ -39,6 +39,30 @@ type ViewRegistry = Map<string, ManagedView>
 
 type IsLoggedInFn = (ses: Session, service: string) => Promise<boolean>
 
+async function emitAccountInfo(
+  columnId: string,
+  managedView: ManagedView,
+  win: BrowserWindow,
+  isLoggedIn: IsLoggedInFn
+): Promise<void> {
+  const { service } = managedView.descriptor
+  const ses = managedView.view.webContents.session
+  const loggedIn = await isLoggedIn(ses, service)
+  if (!loggedIn) return
+
+  const [username, avatarUrl] = await Promise.all([
+    managedView.view.webContents.executeJavaScript(USERNAME_SELECTOR[service]).catch(() => null),
+    managedView.view.webContents.executeJavaScript(AVATAR_URL_SELECTOR[service]).catch(() => null),
+  ])
+  win.webContents.send(CHANNELS.ACCOUNTS_CHANGED, {
+    columnId,
+    service,
+    username,
+    avatarUrl,
+    loggedIn: true,
+  })
+}
+
 function isHomeUrl(service: ServiceName, url: string): boolean {
   try {
     const parsed = new URL(url)
@@ -156,27 +180,12 @@ export function setupIpcHandlers(
         canGoForward: managedView.view.webContents.canGoForward(),
       })
       if (isHomeUrl(service, url)) {
-        void (async () => {
-          const ses = managedView.view.webContents.session
-          const loggedIn = await isLoggedIn(ses, service)
-          if (loggedIn) {
-            const [username, avatarUrl] = await Promise.all([
-              managedView.view.webContents
-                .executeJavaScript(USERNAME_SELECTOR[service])
-                .catch(() => null),
-              managedView.view.webContents
-                .executeJavaScript(AVATAR_URL_SELECTOR[service])
-                .catch(() => null),
-            ])
-            win.webContents.send(CHANNELS.ACCOUNTS_CHANGED, {
-              columnId,
-              service,
-              username,
-              avatarUrl,
-            })
-          }
-        })()
+        void emitAccountInfo(columnId, managedView, win, isLoggedIn)
       }
+    })
+
+    managedView.view.webContents.on('did-finish-load', () => {
+      void emitAccountInfo(columnId, managedView, win, isLoggedIn)
     })
 
     managedView.view.webContents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
@@ -187,26 +196,7 @@ export function setupIpcHandlers(
         canGoForward: managedView.view.webContents.canGoForward(),
       })
       if (isHomeUrl(service, url)) {
-        void (async () => {
-          const ses = managedView.view.webContents.session
-          const loggedIn = await isLoggedIn(ses, service)
-          if (loggedIn) {
-            const [username, avatarUrl] = await Promise.all([
-              managedView.view.webContents
-                .executeJavaScript(USERNAME_SELECTOR[service])
-                .catch(() => null),
-              managedView.view.webContents
-                .executeJavaScript(AVATAR_URL_SELECTOR[service])
-                .catch(() => null),
-            ])
-            win.webContents.send(CHANNELS.ACCOUNTS_CHANGED, {
-              columnId,
-              service,
-              username,
-              avatarUrl,
-            })
-          }
-        })()
+        void emitAccountInfo(columnId, managedView, win, isLoggedIn)
       }
     })
   })

@@ -8,6 +8,7 @@ type AccountInfo = {
   service: string
   username: string | null
   avatarUrl: string | null
+  loggedIn: boolean
 }
 type NavState = { columnId: string; canGoBack: boolean; canGoForward: boolean }
 type BridgeAPI = {

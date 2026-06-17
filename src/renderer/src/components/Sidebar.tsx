@@ -28,7 +28,7 @@ const NAV_LABELS: Record<MenuKey, string> = {
   post: '✎',
 }
 
-type AccountInfo = { username: string | null; avatarUrl: string | null }
+type AccountInfo = { username: string | null; avatarUrl: string | null; loggedIn: boolean }
 
 type SidebarProps = {
   columns: ColumnDescriptor[]
@@ -118,7 +118,7 @@ export function Sidebar({
           const isActive = col.accountId === activeColumnId
           const info = accountInfos[col.accountId]
           const effectiveUsername = info?.username ?? col.username
-          const loggedIn = effectiveUsername !== null
+          const loggedIn = info?.loggedIn ?? effectiveUsername !== null
           const avatarUrl = info?.avatarUrl ?? null
           const badgeColor = SERVICE_META[col.service].badgeColor
           return (

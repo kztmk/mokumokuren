@@ -107,7 +107,6 @@ function createWindow(): void {
     })
     win.contentView.addChildView(view)
     void isLoggedIn(ses, account.service)
-    view.webContents.loadURL(SNS_URLS[account.service])
     const allowedHosts = ALLOWED_HOSTS[account.service] ?? []
     view.webContents.setWindowOpenHandler(({ url }) => {
       try {
@@ -136,6 +135,9 @@ function createWindow(): void {
   )
   setupIpcHandlers(viewRegistry, win, isLoggedIn)
   initLayoutManager(win, views)
+  views.forEach((managedView) => {
+    void managedView.view.webContents.loadURL(SNS_URLS[managedView.descriptor.service])
+  })
 
   win.on('ready-to-show', () => {
     win.show()

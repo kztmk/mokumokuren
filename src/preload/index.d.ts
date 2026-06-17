@@ -11,6 +11,7 @@ interface ElectronBridgeAPI {
       service: string
       username: string | null
       avatarUrl: string | null
+      loggedIn: boolean
     }) => void
   ) => void
   navigate: (columnId: string, menuKey: MenuKey) => void
