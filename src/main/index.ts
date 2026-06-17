@@ -6,6 +6,7 @@ import { getOrCreateSession, applyUAToSession, type ServiceName } from './sessio
 import { addAccount, getAccounts, type Account } from './accountStore'
 import { isEncryptionAvailable } from './safeStorageWrapper'
 import { runIsolationHarness } from './isolationHarness'
+import { applyLayout, initLayoutManager } from './layoutManager'
 
 const SNS_URLS: Record<ServiceName, string> = {
   x: 'https://x.com',
@@ -45,9 +46,6 @@ const PROTOTYPE_ACCOUNTS: Parameters<typeof addAccount>[0][] = [
     isVisible: true,
   },
 ]
-
-const SIDEBAR_W = 72
-const HEADER_H = 40
 
 function getStartupAccounts(): Account[] {
   const accounts = getAccounts()
@@ -94,7 +92,7 @@ function createWindow(): void {
     },
   })
 
-  const views: WebContentsView[] = getStartupAccounts().map((account) => {
+  const views = getStartupAccounts().map((account) => {
     const ses = getOrCreateSession({ service: account.service, accountId: account.id })
     applyUAToSession(ses)
     const view = new WebContentsView({
@@ -122,27 +120,20 @@ function createWindow(): void {
       shell.openExternal(url)
       return { action: 'deny' }
     })
-    return view
+    return {
+      view,
+      descriptor: {
+        accountId: account.id,
+        service: account.service,
+        username: account.username,
+      },
+    }
   })
 
-  function layoutViews(): void {
-    const { width, height } = win.getContentBounds()
-    const colW = Math.max(320, Math.floor((width - SIDEBAR_W) / 3))
-    views.forEach((v, i) =>
-      v.setBounds({
-        x: SIDEBAR_W + i * colW,
-        y: HEADER_H,
-        width: colW,
-        height: height - HEADER_H,
-      })
-    )
-  }
-
-  win.on('resize', layoutViews)
+  initLayoutManager(win, views)
 
   win.on('ready-to-show', () => {
     win.show()
-    layoutViews()
   })
 
   win.webContents.setWindowOpenHandler((details) => {
@@ -155,6 +146,7 @@ function createWindow(): void {
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'))
   }
+  win.webContents.on('did-finish-load', () => applyLayout())
 }
 
 app.whenReady().then(() => {
