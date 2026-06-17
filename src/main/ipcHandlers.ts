@@ -1,4 +1,4 @@
-import { ipcMain, type BrowserWindow, type WebContentsView } from 'electron'
+import { ipcMain, type BrowserWindow, type WebContentsView, type Session } from 'electron'
 import { CHANNELS } from '../shared/channels'
 import {
   COMPOSE_URL,
@@ -25,6 +25,29 @@ type ManagedView = {
 
 type ViewRegistry = Map<string, ManagedView>
 
+type IsLoggedInFn = (ses: Session, service: string) => Promise<boolean>
+
+function isHomeUrl(service: ServiceName, url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    switch (service) {
+      case 'x':
+        return (
+          (parsed.hostname === 'x.com' || parsed.hostname === 'twitter.com') &&
+          parsed.pathname === '/home'
+        )
+      case 'bluesky':
+        return parsed.hostname === 'bsky.app' && parsed.pathname === '/'
+      case 'threads':
+        return parsed.hostname === 'www.threads.net' && parsed.pathname === '/'
+      default:
+        return false
+    }
+  } catch {
+    return false
+  }
+}
+
 function buildNavigationUrl(view: ManagedView, menuKey: MenuKey): string | null {
   const baseUrl = SNS_URLS[view.descriptor.service]
   const path = NAV_MAP[view.descriptor.service][menuKey]
@@ -39,7 +62,11 @@ function buildNavigationUrl(view: ManagedView, menuKey: MenuKey): string | null 
   return url.toString()
 }
 
-export function setupIpcHandlers(viewRegistry: ViewRegistry, win: BrowserWindow): void {
+export function setupIpcHandlers(
+  viewRegistry: ViewRegistry,
+  win: BrowserWindow,
+  isLoggedIn: IsLoggedInFn
+): void {
   let activeColumnId: string | null = null
 
   ipcMain.handle(CHANNELS.NAVIGATE, (_event, columnId: string, menuKey: MenuKey) => {
@@ -108,20 +135,43 @@ export function setupIpcHandlers(viewRegistry: ViewRegistry, win: BrowserWindow)
   })
 
   viewRegistry.forEach((managedView, columnId) => {
-    managedView.view.webContents.on('did-navigate', () => {
+    const { service } = managedView.descriptor
+
+    managedView.view.webContents.on('did-navigate', (_event, url) => {
       win.webContents.send(CHANNELS.NAV_STATE_CHANGED, {
         columnId,
         canGoBack: managedView.view.webContents.canGoBack(),
         canGoForward: managedView.view.webContents.canGoForward(),
       })
+      if (isHomeUrl(service, url)) {
+        void (async () => {
+          const ses = managedView.view.webContents.session
+          const loggedIn = await isLoggedIn(ses, service)
+          if (loggedIn) {
+            // TODO(subtask_004e): trigger account info fetch and ACCOUNTS_CHANGED push
+            console.log(`[login-detected] ${service} columnId=${columnId}`)
+          }
+        })()
+      }
     })
-    managedView.view.webContents.on('did-navigate-in-page', (_event, _url, isMainFrame) => {
+
+    managedView.view.webContents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
       if (!isMainFrame) return
       win.webContents.send(CHANNELS.NAV_STATE_CHANGED, {
         columnId,
         canGoBack: managedView.view.webContents.canGoBack(),
         canGoForward: managedView.view.webContents.canGoForward(),
       })
+      if (isHomeUrl(service, url)) {
+        void (async () => {
+          const ses = managedView.view.webContents.session
+          const loggedIn = await isLoggedIn(ses, service)
+          if (loggedIn) {
+            // TODO(subtask_004e): trigger account info fetch and ACCOUNTS_CHANGED push
+            console.log(`[login-detected] ${service} columnId=${columnId}`)
+          }
+        })()
+      }
     })
   })
 }

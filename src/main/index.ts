@@ -134,7 +134,7 @@ function createWindow(): void {
   const viewRegistry = new Map(
     views.map((managedView) => [managedView.descriptor.accountId, managedView])
   )
-  setupIpcHandlers(viewRegistry, win)
+  setupIpcHandlers(viewRegistry, win, isLoggedIn)
   initLayoutManager(win, views)
 
   win.on('ready-to-show', () => {
