@@ -48,7 +48,16 @@ async function emitAccountInfo(
   const { service } = managedView.descriptor
   const ses = managedView.view.webContents.session
   const loggedIn = await isLoggedIn(ses, service)
-  if (!loggedIn) return
+  if (!loggedIn) {
+    win.webContents.send(CHANNELS.ACCOUNTS_CHANGED, {
+      columnId,
+      service,
+      username: null,
+      avatarUrl: null,
+      loggedIn: false,
+    })
+    return
+  }
 
   const [username, avatarUrl] = await Promise.all([
     managedView.view.webContents.executeJavaScript(USERNAME_SELECTOR[service]).catch(() => null),

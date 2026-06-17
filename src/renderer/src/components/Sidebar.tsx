@@ -118,7 +118,7 @@ export function Sidebar({
           const isActive = col.accountId === activeColumnId
           const info = accountInfos[col.accountId]
           const effectiveUsername = info?.username ?? col.username
-          const loggedIn = info?.loggedIn ?? effectiveUsername !== null
+          const loggedIn = info?.loggedIn ?? false
           const avatarUrl = info?.avatarUrl ?? null
           const badgeColor = SERVICE_META[col.service].badgeColor
           return (
@@ -171,16 +171,18 @@ export function Sidebar({
                 />
               )}
               {loggedIn && (
-                <div style={{
-                  position: 'absolute',
-                  bottom: -1,
-                  right: -1,
-                  width: 12,
-                  height: 12,
-                  borderRadius: 6,
-                  background: '#00BA7C',
-                  border: '2px solid #000',
-                }} />
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: -1,
+                    right: -1,
+                    width: 12,
+                    height: 12,
+                    borderRadius: 6,
+                    background: '#00BA7C',
+                    border: '2px solid #000',
+                  }}
+                />
               )}
             </div>
           )
