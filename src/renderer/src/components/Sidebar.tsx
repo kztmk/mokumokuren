@@ -133,7 +133,7 @@ export function Sidebar({
                 width: 36,
                 height: 36,
                 borderRadius: 18,
-                border: `2px solid ${isActive ? ACTIVE_BORDER_COLOR : 'transparent'}`,
+                border: `2px solid ${isActive ? ACTIVE_BORDER_COLOR : loggedIn ? 'rgba(255,255,255,0.22)' : 'transparent'}`,
                 background: loggedIn ? badgeColor : '#1f1f1f',
                 cursor: 'pointer',
                 display: 'flex',
