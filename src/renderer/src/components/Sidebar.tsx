@@ -134,17 +134,19 @@ export function Sidebar({
                 height: 36,
                 borderRadius: 18,
                 border: `2px solid ${isActive ? ACTIVE_BORDER_COLOR : 'transparent'}`,
-                background: loggedIn ? badgeColor : '#444',
+                background: loggedIn ? badgeColor : '#1f1f1f',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: '#fff',
+                color: loggedIn ? '#fff' : '#5a5a5a',
                 fontSize: 11,
                 fontWeight: 'bold',
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
+                opacity: loggedIn ? 1 : 0.4,
+                filter: loggedIn ? 'none' : 'grayscale(100%)',
               }}
               onClick={() => {
                 onSetActive(col.accountId)
@@ -167,6 +169,18 @@ export function Sidebar({
                     ;(e.currentTarget as HTMLImageElement).style.display = 'none'
                   }}
                 />
+              )}
+              {loggedIn && (
+                <div style={{
+                  position: 'absolute',
+                  bottom: -1,
+                  right: -1,
+                  width: 12,
+                  height: 12,
+                  borderRadius: 6,
+                  background: '#00BA7C',
+                  border: '2px solid #000',
+                }} />
               )}
             </div>
           )
