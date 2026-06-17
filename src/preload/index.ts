@@ -3,11 +3,16 @@ import { electronAPI } from '@electron-toolkit/preload'
 import { CHANNELS } from '../shared/channels'
 import type { ColumnLayoutSnapshot, MenuKey, ServiceName } from '../renderer/src/services'
 
-type AccountInfo = { accountId: string; service: string; username: string | null }
+type AccountInfo = {
+  columnId: string
+  service: string
+  username: string | null
+  avatarUrl: string | null
+}
 type NavState = { columnId: string; canGoBack: boolean; canGoForward: boolean }
 type BridgeAPI = {
   onColumnLayout: (callback: (snap: ColumnLayoutSnapshot) => void) => void
-  onAccountsChanged: (callback: (accounts: AccountInfo[]) => void) => void
+  onAccountsChanged: (callback: (info: AccountInfo) => void) => void
   navigate: (columnId: string, menuKey: MenuKey) => void
   setActiveColumn: (columnId: string) => void
   setColumnVisible: (columnId: string, visible: boolean) => void
@@ -26,8 +31,8 @@ const bridgeAPI: BridgeAPI = {
   onColumnLayout: (callback: (snap: ColumnLayoutSnapshot) => void): void => {
     ipcRenderer.on(CHANNELS.COLUMN_LAYOUT, (_, snap: ColumnLayoutSnapshot) => callback(snap))
   },
-  onAccountsChanged: (callback: (accounts: AccountInfo[]) => void): void => {
-    ipcRenderer.on(CHANNELS.ACCOUNTS_CHANGED, (_, accounts: AccountInfo[]) => callback(accounts))
+  onAccountsChanged: (callback: (info: AccountInfo) => void): void => {
+    ipcRenderer.on(CHANNELS.ACCOUNTS_CHANGED, (_, info: AccountInfo) => callback(info))
   },
   navigate: (columnId: string, menuKey: MenuKey): void => {
     void ipcRenderer.invoke(CHANNELS.NAVIGATE, columnId, menuKey)

@@ -10,11 +10,13 @@ import {
 
 const HEADER_H = 40
 type NavState = { canGoBack: boolean; canGoForward: boolean }
+type AccountInfo = { username: string | null; avatarUrl: string | null }
 
 function App(): React.JSX.Element {
   const [columns, setColumns] = useState<ColumnDescriptor[]>([])
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
   const [navStates, setNavStates] = useState<Record<string, NavState>>({})
+  const [accountInfos, setAccountInfos] = useState<Record<string, AccountInfo>>({})
 
   useEffect(() => {
     window.electronAPI.onColumnLayout((snap) => {
@@ -40,6 +42,13 @@ function App(): React.JSX.Element {
           canGoBack: state.canGoBack,
           canGoForward: state.canGoForward,
         },
+      }))
+    })
+
+    window.electronAPI.onAccountsChanged((info) => {
+      setAccountInfos((prev) => ({
+        ...prev,
+        [info.columnId]: { username: info.username, avatarUrl: info.avatarUrl },
       }))
     })
   }, [])
@@ -81,6 +90,7 @@ function App(): React.JSX.Element {
       <Sidebar
         columns={columns}
         activeColumnId={activeColumnId}
+        accountInfos={accountInfos}
         onNavigate={handleNavigate}
         onSetActive={handleSetActive}
         onComposePost={handleComposePost}

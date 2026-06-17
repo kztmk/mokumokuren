@@ -14,6 +14,18 @@ const SNS_URLS: Record<ServiceName, URL> = {
   threads: new URL('https://www.threads.net'),
 }
 
+const USERNAME_SELECTOR: Record<ServiceName, string> = {
+  x: `document.querySelector('a[href="/home"] + div [data-testid="UserName"] span')?.textContent ?? null`,
+  bluesky: `document.querySelector('[aria-label*="profile"] .r-jwli3a')?.textContent ?? null`,
+  threads: `document.querySelector('a[href*="/@"] span.x1lliihq')?.textContent ?? null`,
+}
+
+const AVATAR_URL_SELECTOR: Record<ServiceName, string> = {
+  x: `document.querySelector('a[href*="/photo"] img[src*="profile_images"]')?.src ?? null`,
+  bluesky: `document.querySelector('[aria-label*="profile"] img[src*="avatar"]')?.src ?? null`,
+  threads: `document.querySelector('img._aagu')?.src ?? null`,
+}
+
 type ManagedView = {
   view: WebContentsView
   descriptor: {
@@ -148,8 +160,20 @@ export function setupIpcHandlers(
           const ses = managedView.view.webContents.session
           const loggedIn = await isLoggedIn(ses, service)
           if (loggedIn) {
-            // TODO(subtask_004e): trigger account info fetch and ACCOUNTS_CHANGED push
-            console.log(`[login-detected] ${service} columnId=${columnId}`)
+            const [username, avatarUrl] = await Promise.all([
+              managedView.view.webContents
+                .executeJavaScript(USERNAME_SELECTOR[service])
+                .catch(() => null),
+              managedView.view.webContents
+                .executeJavaScript(AVATAR_URL_SELECTOR[service])
+                .catch(() => null),
+            ])
+            win.webContents.send(CHANNELS.ACCOUNTS_CHANGED, {
+              columnId,
+              service,
+              username,
+              avatarUrl,
+            })
           }
         })()
       }
@@ -167,8 +191,20 @@ export function setupIpcHandlers(
           const ses = managedView.view.webContents.session
           const loggedIn = await isLoggedIn(ses, service)
           if (loggedIn) {
-            // TODO(subtask_004e): trigger account info fetch and ACCOUNTS_CHANGED push
-            console.log(`[login-detected] ${service} columnId=${columnId}`)
+            const [username, avatarUrl] = await Promise.all([
+              managedView.view.webContents
+                .executeJavaScript(USERNAME_SELECTOR[service])
+                .catch(() => null),
+              managedView.view.webContents
+                .executeJavaScript(AVATAR_URL_SELECTOR[service])
+                .catch(() => null),
+            ])
+            win.webContents.send(CHANNELS.ACCOUNTS_CHANGED, {
+              columnId,
+              service,
+              username,
+              avatarUrl,
+            })
           }
         })()
       }

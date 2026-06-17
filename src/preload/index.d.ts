@@ -6,7 +6,12 @@ type NavState = { columnId: string; canGoBack: boolean; canGoForward: boolean }
 interface ElectronBridgeAPI {
   onColumnLayout: (callback: (snap: ColumnLayoutSnapshot) => void) => void
   onAccountsChanged: (
-    callback: (accounts: { accountId: string; service: string; username: string | null }[]) => void
+    callback: (info: {
+      columnId: string
+      service: string
+      username: string | null
+      avatarUrl: string | null
+    }) => void
   ) => void
   navigate: (columnId: string, menuKey: MenuKey) => void
   setActiveColumn: (columnId: string) => void

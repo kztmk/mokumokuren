@@ -28,9 +28,12 @@ const NAV_LABELS: Record<MenuKey, string> = {
   post: '✎',
 }
 
+type AccountInfo = { username: string | null; avatarUrl: string | null }
+
 type SidebarProps = {
   columns: ColumnDescriptor[]
   activeColumnId: string | null
+  accountInfos: Record<string, AccountInfo>
   onNavigate: (columnId: string, menuKey: MenuKey) => void
   onSetActive: (columnId: string) => void
   onComposePost: (service: ServiceName) => void
@@ -40,6 +43,7 @@ type SidebarProps = {
 export function Sidebar({
   columns,
   activeColumnId,
+  accountInfos,
   onNavigate,
   onSetActive,
   onComposePost,
@@ -112,13 +116,18 @@ export function Sidebar({
       >
         {columns.slice(0, 10).map((col) => {
           const isActive = col.accountId === activeColumnId
-          const loggedIn = col.username !== null
+          const info = accountInfos[col.accountId]
+          const effectiveUsername = info?.username ?? col.username
+          const loggedIn = effectiveUsername !== null
+          const avatarUrl = info?.avatarUrl ?? null
           const badgeColor = SERVICE_META[col.service].badgeColor
           return (
             <div
               key={col.accountId}
               title={
-                col.username ? `@${col.username} (${col.service})` : `未ログイン (${col.service})`
+                effectiveUsername
+                  ? `@${effectiveUsername} (${col.service})`
+                  : `未ログイン (${col.service})`
               }
               style={{
                 width: 36,
@@ -134,12 +143,31 @@ export function Sidebar({
                 fontSize: 11,
                 fontWeight: 'bold',
                 boxSizing: 'border-box',
+                position: 'relative',
+                overflow: 'hidden',
               }}
               onClick={() => {
                 onSetActive(col.accountId)
               }}
             >
               {col.service[0].toUpperCase()}
+              {avatarUrl && (
+                <img
+                  src={avatarUrl}
+                  alt=""
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    borderRadius: 16,
+                  }}
+                  onError={(e) => {
+                    ;(e.currentTarget as HTMLImageElement).style.display = 'none'
+                  }}
+                />
+              )}
             </div>
           )
         })}
