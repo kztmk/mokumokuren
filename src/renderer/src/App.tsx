@@ -1,7 +1,12 @@
 import { useState, useEffect } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { ColumnHeader } from './components/ColumnHeader'
-import { ACTIVE_BORDER_COLOR, type ColumnDescriptor, type MenuKey } from './services'
+import {
+  ACTIVE_BORDER_COLOR,
+  type ColumnDescriptor,
+  type MenuKey,
+  type ServiceName,
+} from './services'
 
 const HEADER_H = 40
 type NavState = { canGoBack: boolean; canGoForward: boolean }
@@ -63,8 +68,8 @@ function App(): React.JSX.Element {
     // Phase4: window.electronAPI.setColumnVisible(columnId, visible)
   }
 
-  const handleComposePost = (): void => {
-    // Phase4: window.electronAPI.composePost(service)
+  const handleComposePost = (service: ServiceName): void => {
+    window.electronAPI.composePost(service)
   }
 
   const handleRequestAddAccount = (): void => {

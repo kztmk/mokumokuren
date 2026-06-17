@@ -1,6 +1,12 @@
 import { ipcMain, type BrowserWindow, type WebContentsView } from 'electron'
 import { CHANNELS } from '../shared/channels'
-import { NAV_MAP, type MenuKey, type ServiceName } from '../renderer/src/services'
+import {
+  COMPOSE_URL,
+  NAV_MAP,
+  POST_TRIGGER,
+  type MenuKey,
+  type ServiceName,
+} from '../renderer/src/services'
 
 const SNS_URLS: Record<ServiceName, URL> = {
   x: new URL('https://x.com'),
@@ -67,8 +73,26 @@ export function setupIpcHandlers(viewRegistry: ViewRegistry, win: BrowserWindow)
     managedView.view.webContents.goForward()
   })
 
-  ipcMain.handle(CHANNELS.COMPOSE_POST, () => {
-    // TODO(subtask_004f): compose flow implementation.
+  ipcMain.handle(CHANNELS.COMPOSE_POST, async (_event, service: string) => {
+    if (!(service in COMPOSE_URL)) return
+    if (activeColumnId === null) return
+
+    const serviceName = service as ServiceName
+    const managedView = viewRegistry.get(activeColumnId)
+    if (
+      !managedView ||
+      managedView.descriptor.service !== serviceName ||
+      managedView.view.webContents.isDestroyed()
+    ) {
+      return
+    }
+
+    const composeUrl = new URL(COMPOSE_URL[serviceName], SNS_URLS[serviceName])
+    try {
+      await managedView.view.webContents.loadURL(composeUrl.toString())
+    } catch {
+      await managedView.view.webContents.executeJavaScript(POST_TRIGGER[serviceName])
+    }
   })
 
   ipcMain.handle(CHANNELS.SET_COLUMN_VISIBLE, () => {
