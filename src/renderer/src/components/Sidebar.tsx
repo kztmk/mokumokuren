@@ -31,6 +31,8 @@ const NAV_LABELS: Record<MenuKey, string> = {
 type SidebarProps = {
   columns: ColumnDescriptor[]
   activeColumnId: string | null
+  onNavigate: (columnId: string, menuKey: MenuKey) => void
+  onSetActive: (columnId: string) => void
   onComposePost: (service: ServiceName) => void
   onRequestAddAccount: (service: ServiceName) => void
 }
@@ -38,11 +40,14 @@ type SidebarProps = {
 export function Sidebar({
   columns,
   activeColumnId,
+  onNavigate,
+  onSetActive,
   onComposePost,
   onRequestAddAccount,
 }: SidebarProps): React.JSX.Element {
   const activeColumn = columns.find((c) => c.accountId === activeColumnId) ?? columns[0] ?? null
   const activeService: ServiceName | null = activeColumn?.service ?? null
+  const navigableColumnId = activeColumn?.accountId ?? null
 
   return (
     <div
@@ -69,7 +74,7 @@ export function Sidebar({
             return (
               <button
                 key={key}
-                disabled={disabled}
+                disabled={disabled || navigableColumnId === null}
                 title={`${key}${path ? ` (${path})` : ''}`}
                 style={{
                   width: 48,
@@ -85,7 +90,8 @@ export function Sidebar({
                   justifyContent: 'center',
                 }}
                 onClick={() => {
-                  // Phase4: navigate to NAV_MAP[activeService][key]
+                  if (navigableColumnId === null || disabled) return
+                  onNavigate(navigableColumnId, key)
                 }}
               >
                 {NAV_LABELS[key]}
@@ -130,7 +136,7 @@ export function Sidebar({
                 boxSizing: 'border-box',
               }}
               onClick={() => {
-                // Phase4: setActiveColumn(col.accountId)
+                onSetActive(col.accountId)
               }}
             >
               {col.service[0].toUpperCase()}

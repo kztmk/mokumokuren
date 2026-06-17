@@ -82,4 +82,22 @@ export function setupIpcHandlers(viewRegistry: ViewRegistry, win: BrowserWindow)
   ipcMain.handle(CHANNELS.REQUEST_ADD_ACCOUNT, () => {
     // Phase5 scope.
   })
+
+  viewRegistry.forEach((managedView, columnId) => {
+    managedView.view.webContents.on('did-navigate', () => {
+      win.webContents.send(CHANNELS.NAV_STATE_CHANGED, {
+        columnId,
+        canGoBack: managedView.view.webContents.canGoBack(),
+        canGoForward: managedView.view.webContents.canGoForward(),
+      })
+    })
+    managedView.view.webContents.on('did-navigate-in-page', (_event, _url, isMainFrame) => {
+      if (!isMainFrame) return
+      win.webContents.send(CHANNELS.NAV_STATE_CHANGED, {
+        columnId,
+        canGoBack: managedView.view.webContents.canGoBack(),
+        canGoForward: managedView.view.webContents.canGoForward(),
+      })
+    })
+  })
 }

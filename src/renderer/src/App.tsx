@@ -1,27 +1,58 @@
 import { useState, useEffect } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { ColumnHeader } from './components/ColumnHeader'
-import { ACTIVE_BORDER_COLOR, type ColumnDescriptor } from './services'
+import { ACTIVE_BORDER_COLOR, type ColumnDescriptor, type MenuKey } from './services'
 
 const HEADER_H = 40
+type NavState = { canGoBack: boolean; canGoForward: boolean }
 
 function App(): React.JSX.Element {
   const [columns, setColumns] = useState<ColumnDescriptor[]>([])
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
+  const [navStates, setNavStates] = useState<Record<string, NavState>>({})
 
   useEffect(() => {
     window.electronAPI.onColumnLayout((snap) => {
       setColumns(snap.columns)
       setActiveColumnId((prev) => {
-        if (prev === null && snap.columns.length > 0) return snap.columns[0].accountId
+        if (prev === null && snap.columns.length > 0) {
+          const initialColumnId = snap.columns[0].accountId
+          window.electronAPI.setActiveColumn(initialColumnId)
+          return initialColumnId
+        }
         return prev
       })
+    })
+
+    window.electronAPI.onActiveChanged((columnId) => {
+      setActiveColumnId(columnId)
+    })
+
+    window.electronAPI.onNavStateChanged((state) => {
+      setNavStates((prev) => ({
+        ...prev,
+        [state.columnId]: {
+          canGoBack: state.canGoBack,
+          canGoForward: state.canGoForward,
+        },
+      }))
     })
   }, [])
 
   const handleSetActive = (columnId: string): void => {
-    // Phase4: window.electronAPI.setActiveColumn(columnId)
-    setActiveColumnId(columnId)
+    window.electronAPI.setActiveColumn(columnId)
+  }
+
+  const handleNavigate = (columnId: string, menuKey: MenuKey): void => {
+    window.electronAPI.navigate(columnId, menuKey)
+  }
+
+  const handleGoBack = (columnId: string): void => {
+    window.electronAPI.goBack(columnId)
+  }
+
+  const handleGoForward = (columnId: string): void => {
+    window.electronAPI.goForward(columnId)
   }
 
   const handleClose = (): void => {
@@ -45,11 +76,14 @@ function App(): React.JSX.Element {
       <Sidebar
         columns={columns}
         activeColumnId={activeColumnId}
+        onNavigate={handleNavigate}
+        onSetActive={handleSetActive}
         onComposePost={handleComposePost}
         onRequestAddAccount={handleRequestAddAccount}
       />
       {columns.map((col) => {
         const isActive = col.accountId === activeColumnId
+        const navState = navStates[col.accountId] ?? { canGoBack: false, canGoForward: false }
         return (
           <div key={col.accountId}>
             <div
@@ -71,9 +105,13 @@ function App(): React.JSX.Element {
               x={col.x}
               width={col.width}
               isActive={isActive}
+              canGoBack={navState.canGoBack}
+              canGoForward={navState.canGoForward}
               onSetActive={handleSetActive}
               onClose={handleClose}
               onSetVisible={handleSetVisible}
+              onGoBack={handleGoBack}
+              onGoForward={handleGoForward}
             />
           </div>
         )
