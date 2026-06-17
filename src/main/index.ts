@@ -7,6 +7,7 @@ import { addAccount, getAccounts, type Account } from './accountStore'
 import { isEncryptionAvailable } from './safeStorageWrapper'
 import { runIsolationHarness } from './isolationHarness'
 import { applyLayout, initLayoutManager } from './layoutManager'
+import { setupIpcHandlers } from './ipcHandlers'
 
 const SNS_URLS: Record<ServiceName, string> = {
   x: 'https://x.com',
@@ -130,6 +131,10 @@ function createWindow(): void {
     }
   })
 
+  const viewRegistry = new Map(
+    views.map((managedView) => [managedView.descriptor.accountId, managedView])
+  )
+  setupIpcHandlers(viewRegistry, win)
   initLayoutManager(win, views)
 
   win.on('ready-to-show', () => {
