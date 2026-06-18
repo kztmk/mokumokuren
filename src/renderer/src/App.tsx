@@ -19,42 +19,46 @@ function App(): React.JSX.Element {
   const [accountInfos, setAccountInfos] = useState<Record<string, AccountInfo>>({})
 
   useEffect(() => {
-    window.electronAPI.onColumnLayout((snap) => {
-      setColumns(snap.columns)
-      setActiveColumnId((prev) => {
-        if (prev === null && snap.columns.length > 0) {
-          const initialColumnId = snap.columns[0].accountId
-          window.electronAPI.setActiveColumn(initialColumnId)
-          return initialColumnId
-        }
-        return prev
-      })
-    })
+    const unsubscribers = [
+      window.electronAPI.onColumnLayout((snap) => {
+        setColumns(snap.columns)
+        setActiveColumnId((prev) => {
+          if (prev === null && snap.columns.length > 0) {
+            const initialColumnId = snap.columns[0].accountId
+            window.electronAPI.setActiveColumn(initialColumnId)
+            return initialColumnId
+          }
+          return prev
+        })
+      }),
 
-    window.electronAPI.onActiveChanged((columnId) => {
-      setActiveColumnId(columnId)
-    })
+      window.electronAPI.onActiveChanged((columnId) => {
+        setActiveColumnId(columnId)
+      }),
 
-    window.electronAPI.onNavStateChanged((state) => {
-      setNavStates((prev) => ({
-        ...prev,
-        [state.columnId]: {
-          canGoBack: state.canGoBack,
-          canGoForward: state.canGoForward,
-        },
-      }))
-    })
+      window.electronAPI.onNavStateChanged((state) => {
+        setNavStates((prev) => ({
+          ...prev,
+          [state.columnId]: {
+            canGoBack: state.canGoBack,
+            canGoForward: state.canGoForward,
+          },
+        }))
+      }),
 
-    window.electronAPI.onAccountsChanged((info) => {
-      setAccountInfos((prev) => ({
-        ...prev,
-        [info.columnId]: {
-          username: info.username,
-          avatarUrl: info.avatarUrl,
-          loggedIn: info.loggedIn,
-        },
-      }))
-    })
+      window.electronAPI.onAccountsChanged((info) => {
+        setAccountInfos((prev) => ({
+          ...prev,
+          [info.columnId]: {
+            username: info.username,
+            avatarUrl: info.avatarUrl,
+            loggedIn: info.loggedIn,
+          },
+        }))
+      }),
+    ]
+
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
   }, [])
 
   const handleSetActive = (columnId: string): void => {

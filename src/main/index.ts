@@ -132,11 +132,16 @@ async function hasAuthCookie(ses: Session, service: string): Promise<boolean> {
 
 async function isLoggedIn(wc: WebContents, service: string): Promise<boolean> {
   if (wc.isDestroyed()) return false
-  const domExpr = DOM_LOGIN_EXPR[service]
-  if (domExpr) {
-    return wc.executeJavaScript(domExpr, true).catch(() => false)
+  try {
+    const domExpr = DOM_LOGIN_EXPR[service]
+    if (domExpr) {
+      return await wc.executeJavaScript(domExpr, true).catch(() => false)
+    }
+    return await hasAuthCookie(wc.session, service)
+  } catch {
+    // wc/session may be destroyed mid-flight; treat as logged out rather than crashing.
+    return false
   }
-  return hasAuthCookie(wc.session, service)
 }
 
 function createWindow(): void {

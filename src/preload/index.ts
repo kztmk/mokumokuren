@@ -11,16 +11,17 @@ type AccountInfo = {
   loggedIn: boolean
 }
 type NavState = { columnId: string; canGoBack: boolean; canGoForward: boolean }
+type Unsubscribe = () => void
 type BridgeAPI = {
-  onColumnLayout: (callback: (snap: ColumnLayoutSnapshot) => void) => void
-  onAccountsChanged: (callback: (info: AccountInfo) => void) => void
+  onColumnLayout: (callback: (snap: ColumnLayoutSnapshot) => void) => Unsubscribe
+  onAccountsChanged: (callback: (info: AccountInfo) => void) => Unsubscribe
   navigate: (columnId: string, menuKey: MenuKey) => void
   setActiveColumn: (columnId: string) => void
   setColumnVisible: (columnId: string, visible: boolean) => void
   goBack: (columnId: string) => void
   goForward: (columnId: string) => void
-  onNavStateChanged: (callback: (state: NavState) => void) => void
-  onActiveChanged: (callback: (columnId: string) => void) => void
+  onNavStateChanged: (callback: (state: NavState) => void) => Unsubscribe
+  onActiveChanged: (callback: (columnId: string) => void) => Unsubscribe
   closeColumn: (columnId: string) => void
   composePost: (service: ServiceName) => void
   requestAddAccount: (service: ServiceName) => void
@@ -29,11 +30,15 @@ type BridgeAPI = {
 // Custom APIs for renderer
 const api = {}
 const bridgeAPI: BridgeAPI = {
-  onColumnLayout: (callback: (snap: ColumnLayoutSnapshot) => void): void => {
-    ipcRenderer.on(CHANNELS.COLUMN_LAYOUT, (_, snap: ColumnLayoutSnapshot) => callback(snap))
+  onColumnLayout: (callback: (snap: ColumnLayoutSnapshot) => void): Unsubscribe => {
+    const listener = (_: unknown, snap: ColumnLayoutSnapshot): void => callback(snap)
+    ipcRenderer.on(CHANNELS.COLUMN_LAYOUT, listener)
+    return () => ipcRenderer.removeListener(CHANNELS.COLUMN_LAYOUT, listener)
   },
-  onAccountsChanged: (callback: (info: AccountInfo) => void): void => {
-    ipcRenderer.on(CHANNELS.ACCOUNTS_CHANGED, (_, info: AccountInfo) => callback(info))
+  onAccountsChanged: (callback: (info: AccountInfo) => void): Unsubscribe => {
+    const listener = (_: unknown, info: AccountInfo): void => callback(info)
+    ipcRenderer.on(CHANNELS.ACCOUNTS_CHANGED, listener)
+    return () => ipcRenderer.removeListener(CHANNELS.ACCOUNTS_CHANGED, listener)
   },
   navigate: (columnId: string, menuKey: MenuKey): void => {
     void ipcRenderer.invoke(CHANNELS.NAVIGATE, columnId, menuKey)
@@ -50,11 +55,15 @@ const bridgeAPI: BridgeAPI = {
   goForward: (columnId: string): void => {
     void ipcRenderer.invoke(CHANNELS.GO_FORWARD, columnId)
   },
-  onNavStateChanged: (callback: (state: NavState) => void): void => {
-    ipcRenderer.on(CHANNELS.NAV_STATE_CHANGED, (_, state: NavState) => callback(state))
+  onNavStateChanged: (callback: (state: NavState) => void): Unsubscribe => {
+    const listener = (_: unknown, state: NavState): void => callback(state)
+    ipcRenderer.on(CHANNELS.NAV_STATE_CHANGED, listener)
+    return () => ipcRenderer.removeListener(CHANNELS.NAV_STATE_CHANGED, listener)
   },
-  onActiveChanged: (callback: (columnId: string) => void): void => {
-    ipcRenderer.on(CHANNELS.ACTIVE_CHANGED, (_, columnId: string) => callback(columnId))
+  onActiveChanged: (callback: (columnId: string) => void): Unsubscribe => {
+    const listener = (_: unknown, columnId: string): void => callback(columnId)
+    ipcRenderer.on(CHANNELS.ACTIVE_CHANGED, listener)
+    return () => ipcRenderer.removeListener(CHANNELS.ACTIVE_CHANGED, listener)
   },
   closeColumn: (columnId: string): void => {
     void ipcRenderer.invoke(CHANNELS.CLOSE_COLUMN, columnId)

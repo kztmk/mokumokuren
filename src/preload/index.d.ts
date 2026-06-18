@@ -2,9 +2,10 @@ import { ElectronAPI } from '@electron-toolkit/preload'
 import type { ColumnLayoutSnapshot, MenuKey, ServiceName } from '../renderer/src/services'
 
 type NavState = { columnId: string; canGoBack: boolean; canGoForward: boolean }
+type Unsubscribe = () => void
 
 interface ElectronBridgeAPI {
-  onColumnLayout: (callback: (snap: ColumnLayoutSnapshot) => void) => void
+  onColumnLayout: (callback: (snap: ColumnLayoutSnapshot) => void) => Unsubscribe
   onAccountsChanged: (
     callback: (info: {
       columnId: string
@@ -13,14 +14,14 @@ interface ElectronBridgeAPI {
       avatarUrl: string | null
       loggedIn: boolean
     }) => void
-  ) => void
+  ) => Unsubscribe
   navigate: (columnId: string, menuKey: MenuKey) => void
   setActiveColumn: (columnId: string) => void
   setColumnVisible: (columnId: string, visible: boolean) => void
   goBack: (columnId: string) => void
   goForward: (columnId: string) => void
-  onNavStateChanged: (callback: (state: NavState) => void) => void
-  onActiveChanged: (callback: (columnId: string) => void) => void
+  onNavStateChanged: (callback: (state: NavState) => void) => Unsubscribe
+  onActiveChanged: (callback: (columnId: string) => void) => Unsubscribe
   closeColumn: (columnId: string) => void
   composePost: (service: ServiceName) => void
   requestAddAccount: (service: ServiceName) => void
