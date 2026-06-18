@@ -1,4 +1,12 @@
-import { app, shell, BrowserWindow, ipcMain, WebContentsView, type Session } from 'electron'
+import {
+  app,
+  shell,
+  BrowserWindow,
+  ipcMain,
+  WebContentsView,
+  type Session,
+  type WebContents,
+} from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -59,25 +67,75 @@ function getStartupAccounts(): Account[] {
     .slice(0, 3)
 }
 
-async function isLoggedIn(ses: Session, service: string): Promise<boolean> {
-  const cookieFilters: Record<string, Electron.CookiesGetFilter[]> = {
-    x: [{ domain: '.x.com', name: 'auth_token' }],
-    bluesky: [
-      { domain: '.bsky.app', name: 'skyware-session' },
-      { domain: '.bsky.app', name: '_bsky_token' },
-    ],
-    threads: [{ domain: '.threads.net', name: 'sessionid' }],
+// Auth detection differs per service:
+// - X keeps a usable signal in cookies (auth_token cleared on sign-out).
+// - Bluesky (bsky.app) is a client-side AT Protocol SPA: the session lives in the
+//   `BSKY_STORAGE` localStorage entry, never in a cookie.
+// - Threads/Instagram do NOT clear their auth cookies (sessionid/ds_user_id) on sign-out, so
+//   cookie presence can't distinguish login state; we detect the login call-to-action instead.
+const AUTH_COOKIE_FILTERS: Record<string, Electron.CookiesGetFilter[]> = {
+  x: [{ domain: '.x.com', name: 'auth_token' }],
+}
+
+// Reads the persisted Bluesky session and reports whether an account is actively signed in.
+// Tokens stay cached in `session.accounts` even after sign-out, so a plain `accessJwt`
+// substring check false-positives; gate on the `active`/`currentAccount` markers instead.
+const BLUESKY_LOGIN_EXPR = `(() => {
+  try {
+    const root = JSON.parse(localStorage.getItem('BSKY_STORAGE') || 'null')
+    const session = root && root.session
+    if (!session) return false
+    const current = session.currentAccount
+    if (current && current.did && current.accessJwt) return true
+    return Array.isArray(session.accounts)
+      && session.accounts.some((a) => a && a.active && a.accessJwt)
+  } catch {
+    return false
   }
+})()`
 
-  const filters = cookieFilters[service] ?? []
+// Threads/Instagram surface a "log in" / "Continue with Instagram" call-to-action only while
+// signed out (cookies persist after sign-out, so they're useless here). Logged-out pages carry
+// an `a[href*="/login"]` link plus login buttons; logged-in pages have neither. Default to
+// logged-out on any uncertainty so a stale session never shows as signed in.
+const THREADS_LOGIN_EXPR = `(() => {
+  try {
+    if (document.querySelector('a[href*="/login"]')) return false
+    const candidates = document.querySelectorAll('a, button, [role="button"]')
+    for (const el of candidates) {
+      const t = (el.textContent || '').trim()
+      if (/continue with instagram/i.test(t)) return false
+      if (/^log in$/i.test(t)) return false
+      if (/^ログイン$/.test(t)) return false
+      if (/instagram(で|アカウントで)?(続行|ログイン)/.test(t)) return false
+    }
+    return true
+  } catch {
+    return false
+  }
+})()`
 
+const DOM_LOGIN_EXPR: Record<string, string> = {
+  bluesky: BLUESKY_LOGIN_EXPR,
+  threads: THREADS_LOGIN_EXPR,
+}
+
+async function hasAuthCookie(ses: Session, service: string): Promise<boolean> {
+  const filters = AUTH_COOKIE_FILTERS[service] ?? []
   for (const filter of filters) {
     if ((await ses.cookies.get(filter)).length > 0) {
       return true
     }
   }
-
   return false
+}
+
+async function isLoggedIn(wc: WebContents, service: string): Promise<boolean> {
+  const domExpr = DOM_LOGIN_EXPR[service]
+  if (domExpr) {
+    return wc.executeJavaScript(domExpr, true).catch(() => false)
+  }
+  return hasAuthCookie(wc.session, service)
 }
 
 function createWindow(): void {
@@ -106,7 +164,7 @@ function createWindow(): void {
       },
     })
     win.contentView.addChildView(view)
-    void isLoggedIn(ses, account.service)
+    void isLoggedIn(view.webContents, account.service)
     const allowedHosts = ALLOWED_HOSTS[account.service] ?? []
     view.webContents.setWindowOpenHandler(({ url }) => {
       try {

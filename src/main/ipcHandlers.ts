@@ -1,4 +1,4 @@
-import { ipcMain, type BrowserWindow, type WebContentsView, type Session } from 'electron'
+import { ipcMain, type BrowserWindow, type WebContentsView, type WebContents } from 'electron'
 import { CHANNELS } from '../shared/channels'
 import {
   COMPOSE_URL,
@@ -37,7 +37,15 @@ type ManagedView = {
 
 type ViewRegistry = Map<string, ManagedView>
 
-type IsLoggedInFn = (ses: Session, service: string) => Promise<boolean>
+type IsLoggedInFn = (wc: WebContents, service: string) => Promise<boolean>
+
+// Last successfully scraped profile per column. Username/avatar selectors only resolve on
+// certain pages, so we fall back to the cached value while still logged in instead of
+// flashing nulls when the user navigates off the profile-bearing page.
+const lastGoodProfile = new Map<string, { username: string | null; avatarUrl: string | null }>()
+// Last payload emitted per column, so polling / repeated navigation events don't spam the
+// renderer with identical updates.
+const lastEmitted = new Map<string, string>()
 
 async function emitAccountInfo(
   columnId: string,
@@ -46,52 +54,37 @@ async function emitAccountInfo(
   isLoggedIn: IsLoggedInFn
 ): Promise<void> {
   const { service } = managedView.descriptor
-  const ses = managedView.view.webContents.session
-  const loggedIn = await isLoggedIn(ses, service)
-  if (!loggedIn) {
-    win.webContents.send(CHANNELS.ACCOUNTS_CHANGED, {
-      columnId,
-      service,
-      username: null,
-      avatarUrl: null,
-      loggedIn: false,
-    })
-    return
+  const wc = managedView.view.webContents
+  if (wc.isDestroyed()) return
+
+  const loggedIn = await isLoggedIn(wc, service)
+
+  let username: string | null = null
+  let avatarUrl: string | null = null
+  if (loggedIn) {
+    const [scrapedUsername, scrapedAvatar] = await Promise.all([
+      wc.executeJavaScript(USERNAME_SELECTOR[service]).catch(() => null),
+      wc.executeJavaScript(AVATAR_URL_SELECTOR[service]).catch(() => null),
+    ])
+    const cached = lastGoodProfile.get(columnId)
+    username = scrapedUsername ?? cached?.username ?? null
+    avatarUrl = scrapedAvatar ?? cached?.avatarUrl ?? null
+    lastGoodProfile.set(columnId, { username, avatarUrl })
+  } else {
+    lastGoodProfile.delete(columnId)
   }
 
-  const [username, avatarUrl] = await Promise.all([
-    managedView.view.webContents.executeJavaScript(USERNAME_SELECTOR[service]).catch(() => null),
-    managedView.view.webContents.executeJavaScript(AVATAR_URL_SELECTOR[service]).catch(() => null),
-  ])
-  win.webContents.send(CHANNELS.ACCOUNTS_CHANGED, {
-    columnId,
-    service,
-    username,
-    avatarUrl,
-    loggedIn: true,
-  })
+  const payload = { columnId, service, username, avatarUrl, loggedIn }
+  const signature = JSON.stringify(payload)
+  if (lastEmitted.get(columnId) === signature) return
+  lastEmitted.set(columnId, signature)
+
+  win.webContents.send(CHANNELS.ACCOUNTS_CHANGED, payload)
 }
 
-function isHomeUrl(service: ServiceName, url: string): boolean {
-  try {
-    const parsed = new URL(url)
-    switch (service) {
-      case 'x':
-        return (
-          (parsed.hostname === 'x.com' || parsed.hostname === 'twitter.com') &&
-          parsed.pathname === '/home'
-        )
-      case 'bluesky':
-        return parsed.hostname === 'bsky.app' && parsed.pathname === '/'
-      case 'threads':
-        return parsed.hostname === 'www.threads.net' && parsed.pathname === '/'
-      default:
-        return false
-    }
-  } catch {
-    return false
-  }
-}
+// Re-evaluate login state at least this often, to catch sign-outs that happen without a
+// navigation event (Bluesky/Threads are SPAs and can clear their session in place).
+const ACCOUNT_POLL_INTERVAL_MS = 4000
 
 function buildNavigationUrl(view: ManagedView, menuKey: MenuKey): string | null {
   const baseUrl = SNS_URLS[view.descriptor.service]
@@ -180,33 +173,36 @@ export function setupIpcHandlers(
   })
 
   viewRegistry.forEach((managedView, columnId) => {
-    const { service } = managedView.descriptor
-
-    managedView.view.webContents.on('did-navigate', (_event, url) => {
+    managedView.view.webContents.on('did-navigate', () => {
       win.webContents.send(CHANNELS.NAV_STATE_CHANGED, {
         columnId,
         canGoBack: managedView.view.webContents.canGoBack(),
         canGoForward: managedView.view.webContents.canGoForward(),
       })
-      if (isHomeUrl(service, url)) {
-        void emitAccountInfo(columnId, managedView, win, isLoggedIn)
-      }
+      void emitAccountInfo(columnId, managedView, win, isLoggedIn)
     })
 
     managedView.view.webContents.on('did-finish-load', () => {
       void emitAccountInfo(columnId, managedView, win, isLoggedIn)
     })
 
-    managedView.view.webContents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
+    managedView.view.webContents.on('did-navigate-in-page', (_event, _url, isMainFrame) => {
       if (!isMainFrame) return
       win.webContents.send(CHANNELS.NAV_STATE_CHANGED, {
         columnId,
         canGoBack: managedView.view.webContents.canGoBack(),
         canGoForward: managedView.view.webContents.canGoForward(),
       })
-      if (isHomeUrl(service, url)) {
-        void emitAccountInfo(columnId, managedView, win, isLoggedIn)
-      }
+      void emitAccountInfo(columnId, managedView, win, isLoggedIn)
     })
   })
+
+  // Safety net: sign-outs in an SPA can clear the session without firing a navigation, so
+  // poll login state and let the dedupe in emitAccountInfo suppress no-op updates.
+  const pollTimer = setInterval(() => {
+    viewRegistry.forEach((managedView, columnId) => {
+      void emitAccountInfo(columnId, managedView, win, isLoggedIn)
+    })
+  }, ACCOUNT_POLL_INTERVAL_MS)
+  win.on('closed', () => clearInterval(pollTimer))
 }
