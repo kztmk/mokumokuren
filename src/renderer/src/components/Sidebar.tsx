@@ -133,7 +133,12 @@ export function Sidebar({
                 width: 36,
                 height: 36,
                 borderRadius: 18,
-                border: `2px solid ${isActive ? ACTIVE_BORDER_COLOR : loggedIn ? 'rgba(255,255,255,0.22)' : 'transparent'}`,
+                border: 'none',
+                boxShadow: isActive
+                  ? `0 0 0 3px ${ACTIVE_BORDER_COLOR}, 0 0 6px 1px rgba(255,178,0,0.55)`
+                  : loggedIn
+                    ? 'inset 0 0 0 1px rgba(255,255,255,0.18)'
+                    : 'none',
                 background: loggedIn ? badgeColor : '#1f1f1f',
                 cursor: 'pointer',
                 display: 'flex',
@@ -171,18 +176,23 @@ export function Sidebar({
                 />
               )}
               {loggedIn && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    bottom: -1,
-                    right: -1,
-                    width: 12,
-                    height: 12,
-                    borderRadius: 6,
-                    background: '#00BA7C',
-                    border: '2px solid #000',
-                  }}
-                />
+                <div style={{
+                  position: 'absolute',
+                  bottom: -2,
+                  right: -2,
+                  width: 16,
+                  height: 16,
+                  borderRadius: 8,
+                  background: '#00BA7C',
+                  border: '2px solid #000',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#fff',
+                  fontSize: 10,
+                  fontWeight: 'bold',
+                  lineHeight: 1,
+                }}>✓</div>
               )}
             </div>
           )
