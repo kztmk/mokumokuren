@@ -79,6 +79,8 @@ async function emitAccountInfo(
   if (lastEmitted.get(columnId) === signature) return
   lastEmitted.set(columnId, signature)
 
+  // The detection above is async; the window may have been closed in the meantime.
+  if (win.isDestroyed()) return
   win.webContents.send(CHANNELS.ACCOUNTS_CHANGED, payload)
 }
 
@@ -204,5 +206,19 @@ export function setupIpcHandlers(
       void emitAccountInfo(columnId, managedView, win, isLoggedIn)
     })
   }, ACCOUNT_POLL_INTERVAL_MS)
-  win.on('closed', () => clearInterval(pollTimer))
+
+  // ipcMain.handle registrations are process-global. On macOS the window can be closed and
+  // re-created (app `activate`), which calls setupIpcHandlers again — so the old handlers must
+  // be removed here, otherwise the second registration throws and the per-column state leaks.
+  win.on('closed', () => {
+    clearInterval(pollTimer)
+    ipcMain.removeHandler(CHANNELS.NAVIGATE)
+    ipcMain.removeHandler(CHANNELS.SET_ACTIVE_COLUMN)
+    ipcMain.removeHandler(CHANNELS.GO_BACK)
+    ipcMain.removeHandler(CHANNELS.GO_FORWARD)
+    ipcMain.removeHandler(CHANNELS.COMPOSE_POST)
+    ipcMain.removeHandler(CHANNELS.SET_COLUMN_VISIBLE)
+    ipcMain.removeHandler(CHANNELS.CLOSE_COLUMN)
+    ipcMain.removeHandler(CHANNELS.REQUEST_ADD_ACCOUNT)
+  })
 }

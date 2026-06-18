@@ -125,7 +125,7 @@ export function Sidebar({
             <div
               key={col.accountId}
               title={
-                effectiveUsername
+                loggedIn && effectiveUsername
                   ? `@${effectiveUsername} (${col.service})`
                   : `未ログイン (${col.service})`
               }

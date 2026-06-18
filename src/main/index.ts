@@ -131,6 +131,7 @@ async function hasAuthCookie(ses: Session, service: string): Promise<boolean> {
 }
 
 async function isLoggedIn(wc: WebContents, service: string): Promise<boolean> {
+  if (wc.isDestroyed()) return false
   const domExpr = DOM_LOGIN_EXPR[service]
   if (domExpr) {
     return wc.executeJavaScript(domExpr, true).catch(() => false)
