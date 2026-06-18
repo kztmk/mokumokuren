@@ -173,6 +173,7 @@ export function Sidebar({
                 {col.service[0].toUpperCase()}
                 {avatarUrl && (
                   <img
+                    key={avatarUrl}
                     src={avatarUrl}
                     alt=""
                     style={{

@@ -120,6 +120,10 @@ function buildNavigationUrl(view: ManagedView, menuKey: MenuKey): string | null 
   const path = NAV_MAP[view.descriptor.service][menuKey]
   if (path === null) return null
 
+  // Without this, a null username collapses `:username` to '' and yields a broken URL
+  // (e.g. /profile/) that passes the includes() check below; bail out instead.
+  if (path.includes(':username') && !view.descriptor.username) return null
+
   const resolvedPath = path.replace(':username', view.descriptor.username ?? '')
   if (resolvedPath.includes(':username')) return null
 
@@ -206,6 +210,7 @@ export function setupIpcHandlers(
 
   viewRegistry.forEach((managedView, columnId) => {
     managedView.view.webContents.on('did-navigate', () => {
+      if (win.isDestroyed()) return
       win.webContents.send(CHANNELS.NAV_STATE_CHANGED, {
         columnId,
         canGoBack: managedView.view.webContents.canGoBack(),
@@ -220,6 +225,7 @@ export function setupIpcHandlers(
 
     managedView.view.webContents.on('did-navigate-in-page', (_event, _url, isMainFrame) => {
       if (!isMainFrame) return
+      if (win.isDestroyed()) return
       win.webContents.send(CHANNELS.NAV_STATE_CHANGED, {
         columnId,
         canGoBack: managedView.view.webContents.canGoBack(),

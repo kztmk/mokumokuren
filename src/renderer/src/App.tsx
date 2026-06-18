@@ -19,18 +19,18 @@ function App(): React.JSX.Element {
   const [accountInfos, setAccountInfos] = useState<Record<string, AccountInfo>>({})
 
   useEffect(() => {
+    // Set the initial active column exactly once, outside any state updater, so the IPC
+    // side-effect can't run multiple times under StrictMode/concurrent re-invocation.
+    let hasSetInitialActive = false
     const unsubscribers = [
       window.electronAPI.onColumnLayout((snap) => {
         setColumns(snap.columns)
-        setActiveColumnId((prev) => {
-          if (prev === null && snap.columns.length > 0) {
-            const initialColumnId = snap.columns[0].accountId
-            // Defer the IPC side-effect: state updaters must stay pure (StrictMode/concurrent).
-            queueMicrotask(() => window.electronAPI.setActiveColumn(initialColumnId))
-            return initialColumnId
-          }
-          return prev
-        })
+        if (!hasSetInitialActive && snap.columns.length > 0) {
+          hasSetInitialActive = true
+          const initialColumnId = snap.columns[0].accountId
+          setActiveColumnId(initialColumnId)
+          window.electronAPI.setActiveColumn(initialColumnId)
+        }
       }),
 
       window.electronAPI.onActiveChanged((columnId) => {
