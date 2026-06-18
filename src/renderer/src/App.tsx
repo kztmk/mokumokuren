@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { ColumnHeader } from './components/ColumnHeader'
 import {
@@ -17,16 +17,17 @@ function App(): React.JSX.Element {
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
   const [navStates, setNavStates] = useState<Record<string, NavState>>({})
   const [accountInfos, setAccountInfos] = useState<Record<string, AccountInfo>>({})
+  // Ref (not a local var) so the once-only guard survives StrictMode unmount/remount.
+  const hasSetInitialActive = useRef(false)
 
   useEffect(() => {
     // Set the initial active column exactly once, outside any state updater, so the IPC
     // side-effect can't run multiple times under StrictMode/concurrent re-invocation.
-    let hasSetInitialActive = false
     const unsubscribers = [
       window.electronAPI.onColumnLayout((snap) => {
         setColumns(snap.columns)
-        if (!hasSetInitialActive && snap.columns.length > 0) {
-          hasSetInitialActive = true
+        if (!hasSetInitialActive.current && snap.columns.length > 0) {
+          hasSetInitialActive.current = true
           const initialColumnId = snap.columns[0].accountId
           setActiveColumnId(initialColumnId)
           window.electronAPI.setActiveColumn(initialColumnId)

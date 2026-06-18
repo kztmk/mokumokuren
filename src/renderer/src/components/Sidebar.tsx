@@ -52,11 +52,11 @@ export function Sidebar({
   const activeColumn = columns.find((c) => c.accountId === activeColumnId) ?? columns[0] ?? null
   const activeService: ServiceName | null = activeColumn?.service ?? null
   const navigableColumnId = activeColumn?.accountId ?? null
-  // Prefer the live scraped handle over the startup placeholder so Profile enables after login.
+  // Prefer the live scraped handle. Only fall back to the startup placeholder before login
+  // state is known — once we know the account is logged out, don't resurrect 'proto'.
+  const activeInfo = activeColumn ? accountInfos[activeColumn.accountId] : null
   const activeUsername =
-    (activeColumn ? accountInfos[activeColumn.accountId]?.username : null) ??
-    activeColumn?.username ??
-    null
+    activeInfo?.username ?? (activeInfo?.loggedIn === false ? null : activeColumn?.username) ?? null
 
   return (
     <div

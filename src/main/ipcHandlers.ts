@@ -125,6 +125,19 @@ async function emitAccountInfo(
 // navigation event (Bluesky/Threads are SPAs and can clear their session in place).
 const ACCOUNT_POLL_INTERVAL_MS = 4000
 
+// Every channel registered via ipcMain.handle below — used to remove prior registrations on
+// re-invocation and to tear them down on window close.
+const HANDLED_CHANNELS = [
+  CHANNELS.NAVIGATE,
+  CHANNELS.SET_ACTIVE_COLUMN,
+  CHANNELS.GO_BACK,
+  CHANNELS.GO_FORWARD,
+  CHANNELS.COMPOSE_POST,
+  CHANNELS.SET_COLUMN_VISIBLE,
+  CHANNELS.CLOSE_COLUMN,
+  CHANNELS.REQUEST_ADD_ACCOUNT,
+]
+
 function buildNavigationUrl(view: ManagedView, menuKey: MenuKey): string | null {
   const baseUrl = SNS_URLS[view.descriptor.service]
   const path = NAV_MAP[view.descriptor.service][menuKey]
@@ -152,6 +165,12 @@ export function setupIpcHandlers(
 ): void {
   let activeColumnId: string | null = null
 
+  // ipcMain.handle is process-global; clear any prior registration first so re-invocation
+  // (macOS window re-create, main-process HMR) can't throw "second handler" on register.
+  for (const channel of HANDLED_CHANNELS) {
+    ipcMain.removeHandler(channel)
+  }
+
   ipcMain.handle(CHANNELS.NAVIGATE, (_event, columnId: string, menuKey: MenuKey) => {
     const managedView = viewRegistry.get(columnId)
     if (!managedView) return
@@ -159,7 +178,9 @@ export function setupIpcHandlers(
     const url = buildNavigationUrl(managedView, menuKey)
     if (!url) return
 
-    void managedView.view.webContents.loadURL(url)
+    managedView.view.webContents.loadURL(url).catch((err) => {
+      console.error(`Failed to load URL: ${url}`, err)
+    })
   })
 
   ipcMain.handle(CHANNELS.SET_ACTIVE_COLUMN, (_event, columnId: string) => {
@@ -266,13 +287,8 @@ export function setupIpcHandlers(
     lastGoodProfile.clear()
     lastEmitted.clear()
     emittingColumns.clear()
-    ipcMain.removeHandler(CHANNELS.NAVIGATE)
-    ipcMain.removeHandler(CHANNELS.SET_ACTIVE_COLUMN)
-    ipcMain.removeHandler(CHANNELS.GO_BACK)
-    ipcMain.removeHandler(CHANNELS.GO_FORWARD)
-    ipcMain.removeHandler(CHANNELS.COMPOSE_POST)
-    ipcMain.removeHandler(CHANNELS.SET_COLUMN_VISIBLE)
-    ipcMain.removeHandler(CHANNELS.CLOSE_COLUMN)
-    ipcMain.removeHandler(CHANNELS.REQUEST_ADD_ACCOUNT)
+    for (const channel of HANDLED_CHANNELS) {
+      ipcMain.removeHandler(channel)
+    }
   })
 }

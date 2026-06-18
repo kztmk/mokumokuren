@@ -202,7 +202,9 @@ function createWindow(): void {
   setupIpcHandlers(viewRegistry, win, isLoggedIn)
   initLayoutManager(win, views)
   views.forEach((managedView) => {
-    void managedView.view.webContents.loadURL(SNS_URLS[managedView.descriptor.service])
+    managedView.view.webContents.loadURL(SNS_URLS[managedView.descriptor.service]).catch((err) => {
+      console.error(`Failed to load startup URL for ${managedView.descriptor.service}:`, err)
+    })
   })
 
   win.on('ready-to-show', () => {
