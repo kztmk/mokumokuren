@@ -66,6 +66,10 @@ const lastGoodProfile = new Map<string, { username: string | null; avatarUrl: st
 // Last payload emitted per column, so polling / repeated navigation events don't spam the
 // renderer with identical updates.
 const lastEmitted = new Map<string, string>()
+// Re-entrancy lock: emitAccountInfo is async (DOM/cookie checks), and bursty navigation +
+// polling can fire it concurrently for the same column. Drop overlapping runs — the in-flight
+// one captures current state, and the 4s poll re-checks shortly after regardless.
+const emittingColumns = new Set<string>()
 
 async function emitAccountInfo(
   columnId: string,
@@ -73,42 +77,48 @@ async function emitAccountInfo(
   win: BrowserWindow,
   isLoggedIn: IsLoggedInFn
 ): Promise<void> {
-  const { service } = managedView.descriptor
-  const wc = managedView.view.webContents
-  if (wc.isDestroyed()) return
+  if (emittingColumns.has(columnId)) return
+  emittingColumns.add(columnId)
+  try {
+    const { service } = managedView.descriptor
+    const wc = managedView.view.webContents
+    if (wc.isDestroyed()) return
 
-  const loggedIn = await isLoggedIn(wc, service)
-  // isLoggedIn awaits DOM/cookie checks; the view may have been torn down meanwhile.
-  if (wc.isDestroyed()) return
+    const loggedIn = await isLoggedIn(wc, service)
+    // isLoggedIn awaits DOM/cookie checks; the view may have been torn down meanwhile.
+    if (wc.isDestroyed()) return
 
-  let username: string | null = null
-  let avatarUrl: string | null = null
-  if (loggedIn) {
-    const [scrapedUsername, scrapedAvatar] = await Promise.all([
-      wc.executeJavaScript(USERNAME_SELECTOR[service]).catch(() => null),
-      wc.executeJavaScript(AVATAR_URL_SELECTOR[service]).catch(() => null),
-    ])
-    const cached = lastGoodProfile.get(columnId)
-    username = scrapedUsername ?? cached?.username ?? null
-    avatarUrl = scrapedAvatar ?? cached?.avatarUrl ?? null
-    lastGoodProfile.set(columnId, { username, avatarUrl })
-  } else {
-    lastGoodProfile.delete(columnId)
+    let username: string | null = null
+    let avatarUrl: string | null = null
+    if (loggedIn) {
+      const [scrapedUsername, scrapedAvatar] = await Promise.all([
+        wc.executeJavaScript(USERNAME_SELECTOR[service]).catch(() => null),
+        wc.executeJavaScript(AVATAR_URL_SELECTOR[service]).catch(() => null),
+      ])
+      const cached = lastGoodProfile.get(columnId)
+      username = scrapedUsername ?? cached?.username ?? null
+      avatarUrl = scrapedAvatar ?? cached?.avatarUrl ?? null
+      lastGoodProfile.set(columnId, { username, avatarUrl })
+    } else {
+      lastGoodProfile.delete(columnId)
+    }
+
+    // Keep the descriptor's handle in sync so buildNavigationUrl resolves Profile links to the
+    // logged-in user (not the startup 'proto' placeholder). USERNAME_SELECTOR yields a handle or
+    // null, so a failed scrape greys the menu rather than navigating to a wrong URL.
+    managedView.descriptor.username = username
+
+    const payload = { columnId, service, username, avatarUrl, loggedIn }
+    const signature = JSON.stringify(payload)
+    if (lastEmitted.get(columnId) === signature) return
+    lastEmitted.set(columnId, signature)
+
+    // The detection above is async; the window may have been closed in the meantime.
+    if (win.isDestroyed()) return
+    win.webContents.send(CHANNELS.ACCOUNTS_CHANGED, payload)
+  } finally {
+    emittingColumns.delete(columnId)
   }
-
-  // Keep the descriptor's handle in sync so buildNavigationUrl resolves Profile links to the
-  // logged-in user (not the startup 'proto' placeholder). USERNAME_SELECTOR yields a handle or
-  // null, so a failed scrape greys the menu rather than navigating to a wrong URL.
-  managedView.descriptor.username = username
-
-  const payload = { columnId, service, username, avatarUrl, loggedIn }
-  const signature = JSON.stringify(payload)
-  if (lastEmitted.get(columnId) === signature) return
-  lastEmitted.set(columnId, signature)
-
-  // The detection above is async; the window may have been closed in the meantime.
-  if (win.isDestroyed()) return
-  win.webContents.send(CHANNELS.ACCOUNTS_CHANGED, payload)
 }
 
 // Re-evaluate login state at least this often, to catch sign-outs that happen without a
@@ -118,7 +128,9 @@ const ACCOUNT_POLL_INTERVAL_MS = 4000
 function buildNavigationUrl(view: ManagedView, menuKey: MenuKey): string | null {
   const baseUrl = SNS_URLS[view.descriptor.service]
   const path = NAV_MAP[view.descriptor.service][menuKey]
-  if (path === null) return null
+  // `!path` also rejects an unknown menuKey (undefined) sent from the renderer, which would
+  // otherwise throw on path.includes() below.
+  if (!path) return null
 
   // Without this, a null username collapses `:username` to '' and yields a broken URL
   // (e.g. /profile/) that passes the includes() check below; bail out instead.
@@ -159,14 +171,16 @@ export function setupIpcHandlers(
 
   ipcMain.handle(CHANNELS.GO_BACK, (_event, columnId: string) => {
     const managedView = viewRegistry.get(columnId)
-    if (!managedView?.view.webContents.canGoBack()) return
+    if (!managedView || managedView.view.webContents.isDestroyed()) return
+    if (!managedView.view.webContents.canGoBack()) return
 
     managedView.view.webContents.goBack()
   })
 
   ipcMain.handle(CHANNELS.GO_FORWARD, (_event, columnId: string) => {
     const managedView = viewRegistry.get(columnId)
-    if (!managedView?.view.webContents.canGoForward()) return
+    if (!managedView || managedView.view.webContents.isDestroyed()) return
+    if (!managedView.view.webContents.canGoForward()) return
 
     managedView.view.webContents.goForward()
   })
@@ -251,6 +265,7 @@ export function setupIpcHandlers(
     // Module-level caches would otherwise carry stale state into a re-created window.
     lastGoodProfile.clear()
     lastEmitted.clear()
+    emittingColumns.clear()
     ipcMain.removeHandler(CHANNELS.NAVIGATE)
     ipcMain.removeHandler(CHANNELS.SET_ACTIVE_COLUMN)
     ipcMain.removeHandler(CHANNELS.GO_BACK)
