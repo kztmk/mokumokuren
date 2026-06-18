@@ -14,10 +14,30 @@ const SNS_URLS: Record<ServiceName, URL> = {
   threads: new URL('https://www.threads.net'),
 }
 
+// Extracts the account HANDLE (not the display name): it feeds buildNavigationUrl's
+// `:username` substitution, so it must be the URL handle. Sourced from the logged-in user's
+// own profile link/localStorage — never from post-author links — and returns null when not
+// resolvable, which safely greys out the Profile menu instead of navigating to a wrong URL.
 const USERNAME_SELECTOR: Record<ServiceName, string> = {
-  x: `document.querySelector('a[href="/home"] + div [data-testid="UserName"] span')?.textContent ?? null`,
-  bluesky: `document.querySelector('[aria-label*="profile"] .r-jwli3a')?.textContent ?? null`,
-  threads: `document.querySelector('a[href*="/@"] span.x1lliihq')?.textContent ?? null`,
+  x: `(() => {
+    const a = document.querySelector('[data-testid="AppTabBar_Profile_Link"]')
+    const href = a && a.getAttribute('href')
+    return href ? href.replace(/^\\//, '') || null : null
+  })()`,
+  bluesky: `(() => {
+    try {
+      const root = JSON.parse(localStorage.getItem('BSKY_STORAGE') || 'null')
+      return root?.session?.currentAccount?.handle ?? null
+    } catch {
+      return null
+    }
+  })()`,
+  threads: `(() => {
+    const svg = document.querySelector('svg[aria-label="Profile"], svg[aria-label="プロフィール"]')
+    const a = svg && svg.closest('a[href^="/@"]')
+    const href = a && a.getAttribute('href')
+    return href ? href.replace(/^\\/@?/, '').replace(/[/?].*$/, '') || null : null
+  })()`,
 }
 
 const AVATAR_URL_SELECTOR: Record<ServiceName, string> = {
@@ -75,6 +95,11 @@ async function emitAccountInfo(
   } else {
     lastGoodProfile.delete(columnId)
   }
+
+  // Keep the descriptor's handle in sync so buildNavigationUrl resolves Profile links to the
+  // logged-in user (not the startup 'proto' placeholder). USERNAME_SELECTOR yields a handle or
+  // null, so a failed scrape greys the menu rather than navigating to a wrong URL.
+  managedView.descriptor.username = username
 
   const payload = { columnId, service, username, avatarUrl, loggedIn }
   const signature = JSON.stringify(payload)

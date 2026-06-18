@@ -102,6 +102,9 @@ const THREADS_LOGIN_EXPR = `(() => {
   try {
     if (document.querySelector('a[href*="/login"]')) return false
     const candidates = document.querySelectorAll('a, button, [role="button"]')
+    // An empty/not-yet-rendered page (about:blank, mid-load) has no controls — treat as
+    // logged-out rather than falling through the loop to a false "logged in".
+    if (candidates.length === 0) return false
     for (const el of candidates) {
       const t = (el.textContent || '').trim()
       if (/continue with instagram/i.test(t)) return false

@@ -52,6 +52,11 @@ export function Sidebar({
   const activeColumn = columns.find((c) => c.accountId === activeColumnId) ?? columns[0] ?? null
   const activeService: ServiceName | null = activeColumn?.service ?? null
   const navigableColumnId = activeColumn?.accountId ?? null
+  // Prefer the live scraped handle over the startup placeholder so Profile enables after login.
+  const activeUsername =
+    (activeColumn ? accountInfos[activeColumn.accountId]?.username : null) ??
+    activeColumn?.username ??
+    null
 
   return (
     <div
@@ -73,7 +78,7 @@ export function Sidebar({
       <nav style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 0', flex: 1 }}>
         {activeService !== null &&
           NAV_KEYS.map((key) => {
-            const disabled = isMenuDisabled(activeService, key, activeColumn?.username ?? null)
+            const disabled = isMenuDisabled(activeService, key, activeUsername)
             const path = NAV_MAP[activeService][key]
             return (
               <button

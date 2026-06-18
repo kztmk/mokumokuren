@@ -25,7 +25,8 @@ function App(): React.JSX.Element {
         setActiveColumnId((prev) => {
           if (prev === null && snap.columns.length > 0) {
             const initialColumnId = snap.columns[0].accountId
-            window.electronAPI.setActiveColumn(initialColumnId)
+            // Defer the IPC side-effect: state updaters must stay pure (StrictMode/concurrent).
+            queueMicrotask(() => window.electronAPI.setActiveColumn(initialColumnId))
             return initialColumnId
           }
           return prev
