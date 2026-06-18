@@ -58,6 +58,8 @@ async function emitAccountInfo(
   if (wc.isDestroyed()) return
 
   const loggedIn = await isLoggedIn(wc, service)
+  // isLoggedIn awaits DOM/cookie checks; the view may have been torn down meanwhile.
+  if (wc.isDestroyed()) return
 
   let username: string | null = null
   let avatarUrl: string | null = null
@@ -158,7 +160,10 @@ export function setupIpcHandlers(
     try {
       await managedView.view.webContents.loadURL(composeUrl.toString())
     } catch {
-      await managedView.view.webContents.executeJavaScript(POST_TRIGGER[serviceName])
+      if (managedView.view.webContents.isDestroyed()) return
+      await managedView.view.webContents
+        .executeJavaScript(POST_TRIGGER[serviceName])
+        .catch(() => {})
     }
   })
 
@@ -212,6 +217,9 @@ export function setupIpcHandlers(
   // be removed here, otherwise the second registration throws and the per-column state leaks.
   win.on('closed', () => {
     clearInterval(pollTimer)
+    // Module-level caches would otherwise carry stale state into a re-created window.
+    lastGoodProfile.clear()
+    lastEmitted.clear()
     ipcMain.removeHandler(CHANNELS.NAVIGATE)
     ipcMain.removeHandler(CHANNELS.SET_ACTIVE_COLUMN)
     ipcMain.removeHandler(CHANNELS.GO_BACK)

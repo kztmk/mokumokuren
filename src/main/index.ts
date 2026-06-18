@@ -165,7 +165,6 @@ function createWindow(): void {
       },
     })
     win.contentView.addChildView(view)
-    void isLoggedIn(view.webContents, account.service)
     const allowedHosts = ALLOWED_HOSTS[account.service] ?? []
     view.webContents.setWindowOpenHandler(({ url }) => {
       try {
