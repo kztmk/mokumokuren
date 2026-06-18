@@ -130,69 +130,81 @@ export function Sidebar({
                   : `未ログイン (${col.service})`
               }
               style={{
+                position: 'relative',
                 width: 36,
                 height: 36,
                 borderRadius: 18,
-                border: 'none',
+                cursor: 'pointer',
+                flexShrink: 0,
                 boxShadow: isActive
                   ? `0 0 0 3px ${ACTIVE_BORDER_COLOR}, 0 0 6px 1px rgba(255,178,0,0.55)`
-                  : loggedIn
-                    ? 'inset 0 0 0 1px rgba(255,255,255,0.18)'
-                    : 'none',
-                background: loggedIn ? badgeColor : '#1f1f1f',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: loggedIn ? '#fff' : '#5a5a5a',
-                fontSize: 11,
-                fontWeight: 'bold',
-                boxSizing: 'border-box',
-                position: 'relative',
-                overflow: 'hidden',
-                opacity: loggedIn ? 1 : 0.4,
-                filter: loggedIn ? 'none' : 'grayscale(100%)',
+                  : 'none',
               }}
               onClick={() => {
                 onSetActive(col.accountId)
               }}
             >
-              {col.service[0].toUpperCase()}
-              {avatarUrl && (
-                <img
-                  src={avatarUrl}
-                  alt=""
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'cover',
-                    borderRadius: 16,
-                  }}
-                  onError={(e) => {
-                    ;(e.currentTarget as HTMLImageElement).style.display = 'none'
-                  }}
-                />
-              )}
-              {loggedIn && (
-                <div style={{
-                  position: 'absolute',
-                  bottom: -2,
-                  right: -2,
-                  width: 16,
-                  height: 16,
-                  borderRadius: 8,
-                  background: '#00BA7C',
-                  border: '2px solid #000',
+              <div
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  borderRadius: 18,
+                  background: loggedIn ? badgeColor : '#1f1f1f',
+                  color: loggedIn ? '#fff' : '#5a5a5a',
+                  fontSize: 11,
+                  fontWeight: 'bold',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: '#fff',
-                  fontSize: 10,
-                  fontWeight: 'bold',
-                  lineHeight: 1,
-                }}>✓</div>
+                  boxSizing: 'border-box',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  opacity: loggedIn ? 1 : 0.4,
+                  filter: loggedIn ? 'none' : 'grayscale(100%)',
+                  boxShadow:
+                    !isActive && loggedIn ? 'inset 0 0 0 1px rgba(255,255,255,0.18)' : 'none',
+                }}
+              >
+                {col.service[0].toUpperCase()}
+                {avatarUrl && (
+                  <img
+                    src={avatarUrl}
+                    alt=""
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                    }}
+                    onError={(e) => {
+                      ;(e.currentTarget as HTMLImageElement).style.display = 'none'
+                    }}
+                  />
+                )}
+              </div>
+              {loggedIn && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: -2,
+                    right: -2,
+                    width: 16,
+                    height: 16,
+                    borderRadius: 8,
+                    background: '#00BA7C',
+                    border: '2px solid #000',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#fff',
+                    fontSize: 10,
+                    fontWeight: 'bold',
+                    lineHeight: 1,
+                  }}
+                >
+                  ✓
+                </div>
               )}
             </div>
           )
