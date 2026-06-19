@@ -46,6 +46,34 @@ const AVATAR_URL_SELECTOR: Record<ServiceName, string> = {
   threads: `document.querySelector('img._aagu')?.src ?? null`,
 }
 
+// Hosts each service legitimately runs on (mirrors ALLOWED_HOSTS in index.ts). Login detection
+// and profile scraping only run when the view is on one of these — on an unrelated page the
+// selectors/localStorage reads return nothing, which would otherwise false-positive a logout.
+const SERVICE_HOSTS: Record<ServiceName, string[]> = {
+  x: ['x.com', 'twitter.com'],
+  bluesky: ['bsky.app', 'bsky.social'],
+  threads: ['threads.net', 'instagram.com'],
+}
+
+function isOnServiceDomain(wc: WebContents, service: ServiceName): boolean {
+  try {
+    const { hostname } = new URL(wc.getURL())
+    return SERVICE_HOSTS[service].some((h) => hostname === h || hostname.endsWith('.' + h))
+  } catch {
+    return false
+  }
+}
+
+// Scraped handles are read from untrusted page DOM/localStorage and flow into
+// buildNavigationUrl's `:username` substitution. Validate against each platform's handle charset
+// before trusting one, so a crafted value can't smuggle path-traversal/URL characters (e.g. `..`)
+// into a navigation target.
+const HANDLE_PATTERN: Record<ServiceName, RegExp> = {
+  x: /^[a-zA-Z0-9_]{1,15}$/,
+  bluesky: /^[a-zA-Z0-9.-]+$/,
+  threads: /^[a-zA-Z0-9._]{1,30}$/,
+}
+
 type ManagedView = {
   view: WebContentsView
   descriptor: {
@@ -74,6 +102,9 @@ const emittingColumns = new Set<string>()
 // on the macOS close→activate→re-create cycle a stale window's `closed` listener could otherwise
 // tear down the *new* window's handlers; gate cleanup on identity against this.
 let currentWin: BrowserWindow | null = null
+// The login-state poll. Module-scoped so a re-invocation of setupIpcHandlers (HMR, window
+// re-create) can clear the previous interval instead of leaking it.
+let pollTimer: ReturnType<typeof setInterval> | null = null
 
 async function emitAccountInfo(
   columnId: string,
@@ -88,6 +119,12 @@ async function emitAccountInfo(
     const wc = managedView.view.webContents
     if (wc.isDestroyed()) return
 
+    // Only inspect login state / run selectors on the service's own domain. On an unrelated page
+    // (e.g. a link the user followed out of the column) the SPA localStorage and DOM selectors
+    // return nothing, which would false-positive a logout and clear the cached profile. X is
+    // exempt: its detection is cookie-based (session-scoped) and stays valid off-domain.
+    if (service !== 'x' && !isOnServiceDomain(wc, service)) return
+
     const loggedIn = await isLoggedIn(wc, service)
     // isLoggedIn awaits DOM/cookie checks; the view may have been torn down meanwhile.
     if (wc.isDestroyed()) return
@@ -95,10 +132,15 @@ async function emitAccountInfo(
     let username: string | null = null
     let avatarUrl: string | null = null
     if (loggedIn) {
-      const [scrapedUsername, scrapedAvatar] = await Promise.all([
+      const [rawUsername, scrapedAvatar] = await Promise.all([
         wc.executeJavaScript(USERNAME_SELECTOR[service]).catch(() => null),
         wc.executeJavaScript(AVATAR_URL_SELECTOR[service]).catch(() => null),
       ])
+      // Reject anything that isn't a well-formed handle for this platform (untrusted DOM input).
+      const scrapedUsername =
+        typeof rawUsername === 'string' && HANDLE_PATTERN[service].test(rawUsername)
+          ? rawUsername
+          : null
       const cached = lastGoodProfile.get(columnId)
       username = scrapedUsername ?? cached?.username ?? null
       avatarUrl = scrapedAvatar ?? cached?.avatarUrl ?? null
@@ -176,7 +218,11 @@ export function setupIpcHandlers(
     ipcMain.removeHandler(channel)
   }
 
-  ipcMain.handle(CHANNELS.NAVIGATE, (_event, columnId: string, menuKey: MenuKey) => {
+  // Defense-in-depth: these handlers are process-global, so reject invocations whose sender
+  // isn't the trusted main-window renderer (the WebContentsViews have no preload/ipcRenderer,
+  // but gate on identity regardless).
+  ipcMain.handle(CHANNELS.NAVIGATE, (event, columnId: string, menuKey: MenuKey) => {
+    if (event.sender !== win.webContents) return
     const managedView = viewRegistry.get(columnId)
     if (!managedView) return
 
@@ -188,14 +234,16 @@ export function setupIpcHandlers(
     })
   })
 
-  ipcMain.handle(CHANNELS.SET_ACTIVE_COLUMN, (_event, columnId: string) => {
+  ipcMain.handle(CHANNELS.SET_ACTIVE_COLUMN, (event, columnId: string) => {
+    if (event.sender !== win.webContents) return
     if (!viewRegistry.has(columnId)) return
 
     activeColumnId = columnId
     win.webContents.send(CHANNELS.ACTIVE_CHANGED, activeColumnId)
   })
 
-  ipcMain.handle(CHANNELS.GO_BACK, (_event, columnId: string) => {
+  ipcMain.handle(CHANNELS.GO_BACK, (event, columnId: string) => {
+    if (event.sender !== win.webContents) return
     const managedView = viewRegistry.get(columnId)
     if (!managedView || managedView.view.webContents.isDestroyed()) return
     if (!managedView.view.webContents.canGoBack()) return
@@ -203,7 +251,8 @@ export function setupIpcHandlers(
     managedView.view.webContents.goBack()
   })
 
-  ipcMain.handle(CHANNELS.GO_FORWARD, (_event, columnId: string) => {
+  ipcMain.handle(CHANNELS.GO_FORWARD, (event, columnId: string) => {
+    if (event.sender !== win.webContents) return
     const managedView = viewRegistry.get(columnId)
     if (!managedView || managedView.view.webContents.isDestroyed()) return
     if (!managedView.view.webContents.canGoForward()) return
@@ -211,7 +260,8 @@ export function setupIpcHandlers(
     managedView.view.webContents.goForward()
   })
 
-  ipcMain.handle(CHANNELS.COMPOSE_POST, async (_event, service: string) => {
+  ipcMain.handle(CHANNELS.COMPOSE_POST, async (event, service: string) => {
+    if (event.sender !== win.webContents) return
     if (!(service in COMPOSE_URL)) return
     if (activeColumnId === null) return
 
@@ -276,8 +326,10 @@ export function setupIpcHandlers(
   })
 
   // Safety net: sign-outs in an SPA can clear the session without firing a navigation, so
-  // poll login state and let the dedupe in emitAccountInfo suppress no-op updates.
-  const pollTimer = setInterval(() => {
+  // poll login state and let the dedupe in emitAccountInfo suppress no-op updates. Clear any
+  // prior interval first so a re-invocation (HMR, window re-create) doesn't leak it.
+  if (pollTimer) clearInterval(pollTimer)
+  pollTimer = setInterval(() => {
     viewRegistry.forEach((managedView, columnId) => {
       void emitAccountInfo(columnId, managedView, win, isLoggedIn)
     })
@@ -287,11 +339,15 @@ export function setupIpcHandlers(
   // re-created (app `activate`), which calls setupIpcHandlers again — so the old handlers must
   // be removed here, otherwise the second registration throws and the per-column state leaks.
   win.on('closed', () => {
-    clearInterval(pollTimer)
-    // Only the window that still owns the global handlers may tear them down. If a new window
-    // was already created (and re-registered) before this `closed` fired, currentWin points at
-    // it — skipping the cleanup avoids unregistering the new window's live handlers.
+    // Only the window that still owns the global handlers/poll may tear them down. If a new
+    // window was already created (and re-registered) before this `closed` fired, currentWin
+    // points at it — and its setupIpcHandlers already cleared our old interval — so skipping
+    // here avoids both unregistering the new window's handlers and clearing its live timer.
     if (currentWin === win) {
+      if (pollTimer) {
+        clearInterval(pollTimer)
+        pollTimer = null
+      }
       // Module-level caches would otherwise carry stale state into a re-created window.
       lastGoodProfile.clear()
       lastEmitted.clear()
