@@ -79,8 +79,8 @@ export function ColumnHeader({
           padding: '0 2px',
           lineHeight: 1,
         }}
-        onClick={(e) => {
-          e.stopPropagation()
+        onClick={() => {
+          // Let the click bubble to the header so navigating an inactive column also selects it.
           onGoBack(columnId)
         }}
       >
@@ -100,8 +100,8 @@ export function ColumnHeader({
           padding: '0 2px',
           lineHeight: 1,
         }}
-        onClick={(e) => {
-          e.stopPropagation()
+        onClick={() => {
+          // Let the click bubble to the header so navigating an inactive column also selects it.
           onGoForward(columnId)
         }}
       >
