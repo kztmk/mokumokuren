@@ -88,7 +88,9 @@ type ManagedView = {
 
 type ViewRegistry = Map<string, ManagedView>
 
-type IsLoggedInFn = (wc: WebContents, service: string) => Promise<boolean>
+// Tri-state: true / false / null. null means "indeterminate" (e.g. the Threads SPA shell hasn't
+// rendered yet) — emitAccountInfo skips emitting so the last known state holds.
+type IsLoggedInFn = (wc: WebContents, service: string) => Promise<boolean | null>
 
 // Last successfully scraped profile per column. Username/avatar selectors only resolve on
 // certain pages, so we fall back to the cached value while still logged in instead of
@@ -98,9 +100,13 @@ const lastGoodProfile = new Map<string, { username: string | null; avatarUrl: st
 // renderer with identical updates.
 const lastEmitted = new Map<string, string>()
 // Re-entrancy lock: emitAccountInfo is async (DOM/cookie checks), and bursty navigation +
-// polling can fire it concurrently for the same column. Drop overlapping runs — the in-flight
-// one captures current state, and the 4s poll re-checks shortly after regardless.
+// polling can fire it concurrently for the same column. Overlapping calls don't run in parallel;
+// instead they set rerunRequested (below) so the in-flight pass re-runs once it finishes.
 const emittingColumns = new Set<string>()
+// A call that arrives while a column's emit is in flight isn't dropped: it flags a trailing
+// re-run, so e.g. a navigation that lands mid-poll still gets its fresh state emitted instead of
+// waiting for the next 4s poll. Concurrent calls collapse to a single trailing re-run.
+const rerunRequested = new Set<string>()
 // The window that currently owns the process-global IPC handlers. ipcMain.handle is global, so
 // on the macOS close→activate→re-create cycle a stale window's `closed` listener could otherwise
 // tear down the *new* window's handlers; gate cleanup on identity against this.
@@ -115,7 +121,12 @@ async function emitAccountInfo(
   win: BrowserWindow,
   isLoggedIn: IsLoggedInFn
 ): Promise<void> {
-  if (emittingColumns.has(columnId)) return
+  if (emittingColumns.has(columnId)) {
+    // Don't drop this request — flag a trailing re-run so the in-flight pass re-evaluates with
+    // fresh state once it completes (avoids a navigation getting stuck behind a stale poll).
+    rerunRequested.add(columnId)
+    return
+  }
   emittingColumns.add(columnId)
   try {
     const { service } = managedView.descriptor
@@ -128,9 +139,14 @@ async function emitAccountInfo(
     // exempt: its detection is cookie-based (session-scoped) and stays valid off-domain.
     if (service !== 'x' && !isOnServiceDomain(wc, service)) return
 
-    const loggedIn = await isLoggedIn(wc, service)
+    const loginState = await isLoggedIn(wc, service)
     // isLoggedIn awaits DOM/cookie checks; the view may have been torn down meanwhile.
     if (wc.isDestroyed()) return
+
+    // Indeterminate (e.g. Threads SPA shell not yet rendered): keep the last emitted state rather
+    // than flashing logged-out. did-finish-load and the poll re-check once the DOM settles.
+    if (loginState === null) return
+    const loggedIn = loginState
 
     // While a page is still loading the DOM-based checks transiently read as logged-out (the
     // login chrome hasn't rendered yet). Don't emit that false state — did-finish-load and the
@@ -185,6 +201,11 @@ async function emitAccountInfo(
     console.error(`Failed to emit account info for column ${columnId}:`, err)
   } finally {
     emittingColumns.delete(columnId)
+    // A call arrived while this pass was in flight — re-run once with fresh state. The lastEmitted
+    // dedupe suppresses a redundant send if nothing actually changed.
+    if (rerunRequested.delete(columnId) && !win.isDestroyed()) {
+      void emitAccountInfo(columnId, managedView, win, isLoggedIn)
+    }
   }
 }
 
@@ -374,6 +395,7 @@ export function setupIpcHandlers(
       lastGoodProfile.clear()
       lastEmitted.clear()
       emittingColumns.clear()
+      rerunRequested.clear()
       for (const channel of HANDLED_CHANNELS) {
         ipcMain.removeHandler(channel)
       }

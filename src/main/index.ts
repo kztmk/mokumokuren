@@ -95,16 +95,19 @@ const BLUESKY_LOGIN_EXPR = `(() => {
 })()`
 
 // Threads/Instagram surface a "log in" / "Continue with Instagram" call-to-action only while
-// signed out (cookies persist after sign-out, so they're useless here). Logged-out pages carry
-// an `a[href*="/login"]` link plus login buttons; logged-in pages have neither. Default to
-// logged-out on any uncertainty so a stale session never shows as signed in.
+// signed out (cookies persist after sign-out, so they're useless here). This is a *tri-state*
+// check — true (signed in) / false (signed out) / null (indeterminate). Threads is a client-side
+// SPA, so right after did-finish-load the DOM can still be an empty shell; returning false there
+// would flash a false logged-out, so we return null and let the caller keep the last known state.
+// Primary signals are language-independent (the `/login` route link and the nav `/@handle` link);
+// the text checks are an EN/JA fallback for login CTAs that aren't `/login` anchors.
 const THREADS_LOGIN_EXPR = `(() => {
   try {
+    // Definite logged-out: the login route link (language-independent).
     if (document.querySelector('a[href*="/login"]')) return false
     const candidates = document.querySelectorAll('a, button, [role="button"]')
-    // An empty/not-yet-rendered page (about:blank, mid-load) has no controls — treat as
-    // logged-out rather than falling through the loop to a false "logged in".
-    if (candidates.length === 0) return false
+    // Empty/unrendered SPA shell (about:blank, mid client-render): indeterminate — keep last state.
+    if (candidates.length === 0) return null
     for (const el of candidates) {
       const t = (el.textContent || '').trim()
       if (/continue with instagram/i.test(t)) return false
@@ -112,12 +115,11 @@ const THREADS_LOGIN_EXPR = `(() => {
       if (/^ログイン$/.test(t)) return false
       if (/instagram(で|アカウントで)?(続行|ログイン)/.test(t)) return false
     }
-    // Positive check: the absence of a login CTA isn't enough — a logged-out user can land on a
-    // sub-page with no login button (e.g. /terms, /privacy) and be misread as signed in. Require
-    // a logged-in-only signal: the app nav exposes the signed-in user's own profile link
-    // (/@handle), which legal/standalone pages lack.
-    if (!document.querySelector('a[href^="/@"]')) return false
-    return true
+    // Definite logged-in: the app nav exposes the signed-in user's own profile link (/@handle).
+    if (document.querySelector('a[href^="/@"]')) return true
+    // No logout CTA and no nav profile link — indeterminate (a sub-page like /terms, or the nav
+    // not yet rendered). Keep the last known state rather than guessing.
+    return null
   } catch {
     return false
   }
@@ -138,7 +140,10 @@ async function hasAuthCookie(ses: Session, service: string): Promise<boolean> {
   return false
 }
 
-async function isLoggedIn(wc: WebContents, service: string): Promise<boolean> {
+// Tri-state: true (signed in) / false (signed out) / null (indeterminate — caller should keep the
+// last known state rather than emit). Only the DOM-based services can be indeterminate; the
+// cookie path is always conclusive.
+async function isLoggedIn(wc: WebContents, service: string): Promise<boolean | null> {
   if (wc.isDestroyed()) return false
   try {
     const domExpr = DOM_LOGIN_EXPR[service]
