@@ -1,0 +1,14 @@
+export const CHANNELS = {
+  NAVIGATE: 'navigate',
+  SET_ACTIVE_COLUMN: 'set-active-column',
+  SET_COLUMN_VISIBLE: 'set-column-visible',
+  GO_BACK: 'go-back',
+  GO_FORWARD: 'go-forward',
+  COMPOSE_POST: 'compose-post',
+  CLOSE_COLUMN: 'close-column',
+  REQUEST_ADD_ACCOUNT: 'request-add-account',
+  NAV_STATE_CHANGED: 'nav-state-changed',
+  COLUMN_LAYOUT: 'column-layout',
+  ACCOUNTS_CHANGED: 'accounts-changed',
+  ACTIVE_CHANGED: 'active-changed',
+} as const

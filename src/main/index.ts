@@ -1,4 +1,12 @@
-import { app, shell, BrowserWindow, ipcMain, WebContentsView, type Session } from 'electron'
+import {
+  app,
+  shell,
+  BrowserWindow,
+  ipcMain,
+  WebContentsView,
+  type Session,
+  type WebContents,
+} from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -7,12 +15,8 @@ import { addAccount, getAccounts, type Account } from './accountStore'
 import { isEncryptionAvailable } from './safeStorageWrapper'
 import { runIsolationHarness } from './isolationHarness'
 import { applyLayout, initLayoutManager } from './layoutManager'
-
-const SNS_URLS: Record<ServiceName, string> = {
-  x: 'https://x.com',
-  bluesky: 'https://bsky.app',
-  threads: 'https://www.threads.net',
-}
+import { setupIpcHandlers } from './ipcHandlers'
+import { SNS_URLS } from '../renderer/src/services'
 
 const ALLOWED_HOSTS: Record<ServiceName, string[]> = {
   x: ['x.com', 'twitter.com'],
@@ -58,25 +62,96 @@ function getStartupAccounts(): Account[] {
     .slice(0, 3)
 }
 
-async function isLoggedIn(ses: Session, service: string): Promise<boolean> {
-  const cookieFilters: Record<string, Electron.CookiesGetFilter[]> = {
-    x: [{ domain: '.x.com', name: 'auth_token' }],
-    bluesky: [
-      { domain: '.bsky.app', name: 'skyware-session' },
-      { domain: '.bsky.app', name: '_bsky_token' },
-    ],
-    threads: [{ domain: '.threads.net', name: 'sessionid' }],
+// Auth detection differs per service:
+// - X keeps a usable signal in cookies (auth_token cleared on sign-out).
+// - Bluesky (bsky.app) is a client-side AT Protocol SPA: the session lives in the
+//   `BSKY_STORAGE` localStorage entry, never in a cookie.
+// - Threads/Instagram do NOT clear their auth cookies (sessionid/ds_user_id) on sign-out, so
+//   cookie presence can't distinguish login state; we detect the login call-to-action instead.
+const AUTH_COOKIE_FILTERS: Record<string, Electron.CookiesGetFilter[]> = {
+  x: [{ domain: '.x.com', name: 'auth_token' }],
+}
+
+// Reads the persisted Bluesky session and reports whether an account is actively signed in.
+// Tokens stay cached in `session.accounts` even after sign-out, so a plain `accessJwt`
+// substring check false-positives; gate on the `active`/`currentAccount` markers instead.
+const BLUESKY_LOGIN_EXPR = `(() => {
+  try {
+    const root = JSON.parse(localStorage.getItem('BSKY_STORAGE') || 'null')
+    const session = root && root.session
+    if (!session) return false
+    const current = session.currentAccount
+    if (current && current.did && current.accessJwt) return true
+    return Array.isArray(session.accounts)
+      && session.accounts.some((a) => a && a.active && a.accessJwt)
+  } catch {
+    return false
   }
+})()`
 
-  const filters = cookieFilters[service] ?? []
+// Threads/Instagram surface a "log in" / "Continue with Instagram" call-to-action only while
+// signed out (cookies persist after sign-out, so they're useless here). This is a *tri-state*
+// check — true (signed in) / false (signed out) / null (indeterminate). Threads is a client-side
+// SPA, so right after did-finish-load the DOM can still be an empty shell; returning false there
+// would flash a false logged-out, so we return null and let the caller keep the last known state.
+// Primary signals are language-independent (the `/login` route link and the nav `/@handle` link);
+// the text checks are an EN/JA fallback for login CTAs that aren't `/login` anchors.
+const THREADS_LOGIN_EXPR = `(() => {
+  try {
+    // Definite logged-out: the login route link (language-independent).
+    if (document.querySelector('a[href*="/login"]')) return false
+    const candidates = document.querySelectorAll('a, button, [role="button"]')
+    // Empty/unrendered SPA shell (about:blank, mid client-render): indeterminate — keep last state.
+    if (candidates.length === 0) return null
+    for (const el of candidates) {
+      const t = (el.textContent || '').trim()
+      if (/continue with instagram/i.test(t)) return false
+      if (/^log in$/i.test(t)) return false
+      if (/^ログイン$/.test(t)) return false
+      if (/instagram(で|アカウントで)?(続行|ログイン)/.test(t)) return false
+    }
+    // Definite logged-in: the app nav exposes the signed-in user's own profile link (/@handle).
+    if (document.querySelector('a[href^="/@"]')) return true
+    // No logout CTA and no nav profile link — indeterminate (a sub-page like /terms, or the nav
+    // not yet rendered). Keep the last known state rather than guessing.
+    return null
+  } catch {
+    return false
+  }
+})()`
 
+const DOM_LOGIN_EXPR: Record<string, string> = {
+  bluesky: BLUESKY_LOGIN_EXPR,
+  threads: THREADS_LOGIN_EXPR,
+}
+
+async function hasAuthCookie(ses: Session, service: string): Promise<boolean> {
+  const filters = AUTH_COOKIE_FILTERS[service] ?? []
   for (const filter of filters) {
     if ((await ses.cookies.get(filter)).length > 0) {
       return true
     }
   }
-
   return false
+}
+
+// Tri-state: true (signed in) / false (signed out) / null (indeterminate — caller should keep the
+// last known state rather than emit). Only the DOM-based services can be indeterminate; the
+// cookie path is always conclusive.
+async function isLoggedIn(wc: WebContents, service: string): Promise<boolean | null> {
+  if (wc.isDestroyed()) return false
+  try {
+    const domExpr = DOM_LOGIN_EXPR[service]
+    if (domExpr) {
+      // A transient execution failure (mid-navigation/render) is indeterminate, not a logout —
+      // return null so the caller keeps the last state instead of flashing logged-out.
+      return await wc.executeJavaScript(domExpr, true).catch(() => null)
+    }
+    return await hasAuthCookie(wc.session, service)
+  } catch {
+    // wc/session may be destroyed mid-flight; treat as logged out rather than crashing.
+    return false
+  }
 }
 
 function createWindow(): void {
@@ -105,8 +180,6 @@ function createWindow(): void {
       },
     })
     win.contentView.addChildView(view)
-    void isLoggedIn(ses, account.service)
-    view.webContents.loadURL(SNS_URLS[account.service])
     const allowedHosts = ALLOWED_HOSTS[account.service] ?? []
     view.webContents.setWindowOpenHandler(({ url }) => {
       try {
@@ -130,7 +203,16 @@ function createWindow(): void {
     }
   })
 
+  const viewRegistry = new Map(
+    views.map((managedView) => [managedView.descriptor.accountId, managedView])
+  )
+  setupIpcHandlers(viewRegistry, win, isLoggedIn)
   initLayoutManager(win, views)
+  views.forEach((managedView) => {
+    managedView.view.webContents.loadURL(SNS_URLS[managedView.descriptor.service]).catch((err) => {
+      console.error(`Failed to load startup URL for ${managedView.descriptor.service}:`, err)
+    })
+  })
 
   win.on('ready-to-show', () => {
     win.show()
