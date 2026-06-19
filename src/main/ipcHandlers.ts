@@ -4,12 +4,19 @@ import {
   COMPOSE_URL,
   NAV_MAP,
   POST_TRIGGER,
+  SERVICE_META,
   SNS_URLS,
   type MenuKey,
   type ServiceName,
 } from '../renderer/src/services'
 import { addColumn, removeColumn, type ManagedView } from './columnManager'
-import { getAccounts, getAccountById, updateAccount, removeAccount } from './accountStore'
+import {
+  getAccounts,
+  getAccountById,
+  addAccount,
+  updateAccount,
+  removeAccount,
+} from './accountStore'
 import { clearSessionData } from './sessionManager'
 
 // Extracts the account HANDLE (not the display name): it feeds buildNavigationUrl's
@@ -419,8 +426,35 @@ export function setupIpcHandlers(
     if (!win.isDestroyed()) broadcastAccounts(win)
   })
 
-  ipcMain.handle(CHANNELS.REQUEST_ADD_ACCOUNT, () => {
-    // Phase5 scope.
+  ipcMain.handle(CHANNELS.REQUEST_ADD_ACCOUNT, async (event) => {
+    if (win.isDestroyed() || event.sender !== win.webContents) return
+
+    // Pick the service via a native dialog, then create the account and spawn its column. The new
+    // column has an empty session, so loading the service URL lands on its login page.
+    const services: ServiceName[] = ['x', 'bluesky', 'threads']
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'question',
+      buttons: [...services.map((s) => SERVICE_META[s].label), 'キャンセル'],
+      cancelId: services.length,
+      defaultId: 0,
+      title: 'アカウントを追加',
+      message: '追加するサービスを選択してください',
+    })
+    if (response < 0 || response >= services.length) return
+    if (win.isDestroyed()) return
+
+    const service = services[response]
+    const maxOrder = getAccounts().reduce((max, a) => Math.max(max, a.order), -1)
+    const account = addAccount({
+      service,
+      displayName: SERVICE_META[service].label,
+      username: null,
+      avatarUrl: null,
+      order: maxOrder + 1,
+      isVisible: true,
+    })
+    addColumn(account)
+    broadcastAccounts(win)
   })
 
   // Wire a single column's navigation/login listeners. Called for every existing view at setup

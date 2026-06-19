@@ -131,7 +131,8 @@ function App(): React.JSX.Element {
   }
 
   const handleRequestAddAccount = (): void => {
-    // Phase4: window.electronAPI.requestAddAccount(service)
+    // Main shows a service-picker dialog, then creates the account + column.
+    window.electronAPI.requestAddAccount()
   }
 
   return (

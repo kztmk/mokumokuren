@@ -30,7 +30,7 @@ type BridgeAPI = {
   onActiveChanged: (callback: (columnId: string) => void) => Unsubscribe
   closeColumn: (columnId: string) => void
   composePost: (service: ServiceName) => void
-  requestAddAccount: (service: ServiceName) => void
+  requestAddAccount: () => void
 }
 
 // Custom APIs for renderer
@@ -82,8 +82,8 @@ const bridgeAPI: BridgeAPI = {
   composePost: (service: ServiceName): void => {
     void ipcRenderer.invoke(CHANNELS.COMPOSE_POST, service)
   },
-  requestAddAccount: (service: ServiceName): void => {
-    void ipcRenderer.invoke(CHANNELS.REQUEST_ADD_ACCOUNT, service)
+  requestAddAccount: (): void => {
+    void ipcRenderer.invoke(CHANNELS.REQUEST_ADD_ACCOUNT)
   },
 }
 

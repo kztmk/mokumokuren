@@ -30,7 +30,7 @@ interface ElectronBridgeAPI {
   onActiveChanged: (callback: (columnId: string) => void) => Unsubscribe
   closeColumn: (columnId: string) => void
   composePost: (service: ServiceName) => void
-  requestAddAccount: (service: ServiceName) => void
+  requestAddAccount: () => void
 }
 
 declare global {

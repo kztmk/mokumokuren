@@ -40,7 +40,7 @@ type SidebarProps = {
   onSetActive: (columnId: string) => void
   onShowColumn: (columnId: string) => void
   onComposePost: (service: ServiceName) => void
-  onRequestAddAccount: (service: ServiceName) => void
+  onRequestAddAccount: () => void
 }
 
 export function Sidebar({
@@ -305,8 +305,8 @@ export function Sidebar({
             justifyContent: 'center',
           }}
           onClick={() => {
-            // Phase4: requestAddAccount stub
-            if (activeService !== null) onRequestAddAccount(activeService)
+            // Always available — main shows the service picker (works even with no accounts yet).
+            onRequestAddAccount()
           }}
         >
           +
