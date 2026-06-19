@@ -31,6 +31,7 @@ interface ElectronBridgeAPI {
   closeColumn: (columnId: string) => void
   composePost: (service: ServiceName) => void
   requestAddAccount: () => void
+  reorderColumns: (orderedVisibleIds: string[]) => void
 }
 
 declare global {

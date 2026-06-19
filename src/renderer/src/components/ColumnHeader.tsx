@@ -14,6 +14,8 @@ type ColumnHeaderProps = {
   onSetVisible: (columnId: string, visible: boolean) => void
   onGoBack: (columnId: string) => void
   onGoForward: (columnId: string) => void
+  onDragStartColumn: (columnId: string) => void
+  onDropColumn: (columnId: string) => void
 }
 
 export function ColumnHeader({
@@ -30,6 +32,8 @@ export function ColumnHeader({
   onSetVisible,
   onGoBack,
   onGoForward,
+  onDragStartColumn,
+  onDropColumn,
 }: ColumnHeaderProps): React.JSX.Element {
   const meta = SERVICE_META[service]
 
@@ -52,6 +56,20 @@ export function ColumnHeader({
         boxSizing: 'border-box',
       }}
       onClick={() => onSetActive(columnId)}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = 'move'
+        onDragStartColumn(columnId)
+      }}
+      onDragOver={(e) => {
+        // Required for the drop to fire; marks this header as a valid drop target.
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+      }}
+      onDrop={(e) => {
+        e.preventDefault()
+        onDropColumn(columnId)
+      }}
     >
       {/* Service badge */}
       <div

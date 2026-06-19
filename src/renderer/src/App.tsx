@@ -24,6 +24,8 @@ function App(): React.JSX.Element {
   // Mirror of activeColumnId readable inside the (empty-deps) IPC callbacks below, which would
   // otherwise close over the stale initial value.
   const activeColumnIdRef = useRef<string | null>(null)
+  // accountId currently being dragged for column reordering.
+  const dragColumnIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     // Set the initial active column exactly once, outside any state updater, so the IPC
@@ -135,6 +137,25 @@ function App(): React.JSX.Element {
     window.electronAPI.requestAddAccount()
   }
 
+  const handleColumnDragStart = (columnId: string): void => {
+    dragColumnIdRef.current = columnId
+  }
+
+  const handleColumnDrop = (targetColumnId: string): void => {
+    const sourceId = dragColumnIdRef.current
+    dragColumnIdRef.current = null
+    if (!sourceId || sourceId === targetColumnId) return
+
+    const ids = columns.map((c) => c.accountId)
+    const from = ids.indexOf(sourceId)
+    const to = ids.indexOf(targetColumnId)
+    if (from === -1 || to === -1) return
+
+    ids.splice(from, 1)
+    ids.splice(to, 0, sourceId)
+    window.electronAPI.reorderColumns(ids)
+  }
+
   return (
     <>
       <Sidebar
@@ -179,6 +200,8 @@ function App(): React.JSX.Element {
               onSetVisible={handleSetVisible}
               onGoBack={handleGoBack}
               onGoForward={handleGoForward}
+              onDragStartColumn={handleColumnDragStart}
+              onDropColumn={handleColumnDrop}
             />
           </div>
         )

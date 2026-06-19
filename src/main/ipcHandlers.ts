@@ -9,7 +9,7 @@ import {
   type MenuKey,
   type ServiceName,
 } from '../renderer/src/services'
-import { addColumn, removeColumn, type ManagedView } from './columnManager'
+import { addColumn, removeColumn, reorderColumns, type ManagedView } from './columnManager'
 import {
   getAccounts,
   getAccountById,
@@ -248,6 +248,7 @@ const HANDLED_CHANNELS = [
   CHANNELS.SET_COLUMN_VISIBLE,
   CHANNELS.CLOSE_COLUMN,
   CHANNELS.REQUEST_ADD_ACCOUNT,
+  CHANNELS.REORDER_COLUMNS,
 ]
 
 function buildNavigationUrl(view: ManagedView, menuKey: MenuKey): string | null {
@@ -454,6 +455,26 @@ export function setupIpcHandlers(
       isVisible: true,
     })
     addColumn(account)
+    broadcastAccounts(win)
+  })
+
+  ipcMain.handle(CHANNELS.REORDER_COLUMNS, (event, orderedVisibleIds: string[]) => {
+    if (win.isDestroyed() || event.sender !== win.webContents) return
+    if (!Array.isArray(orderedVisibleIds)) return
+
+    // Only the dragged visible columns define the new sequence; hidden accounts keep their
+    // relative order and follow. Persist sequential `order` for all accounts so the arrangement
+    // survives restart, then reorder the live views to match and re-broadcast.
+    const validIds = orderedVisibleIds.filter((id) => getAccountById(id)?.isVisible)
+    if (validIds.length === 0) return
+    const hidden = getAccounts()
+      .filter((a) => !validIds.includes(a.id))
+      .sort((a, b) => a.order - b.order)
+
+    const finalOrder = [...validIds, ...hidden.map((a) => a.id)]
+    finalOrder.forEach((id, index) => updateAccount(id, { order: index }))
+
+    reorderColumns(validIds)
     broadcastAccounts(win)
   })
 

@@ -31,6 +31,7 @@ type BridgeAPI = {
   closeColumn: (columnId: string) => void
   composePost: (service: ServiceName) => void
   requestAddAccount: () => void
+  reorderColumns: (orderedVisibleIds: string[]) => void
 }
 
 // Custom APIs for renderer
@@ -84,6 +85,9 @@ const bridgeAPI: BridgeAPI = {
   },
   requestAddAccount: (): void => {
     void ipcRenderer.invoke(CHANNELS.REQUEST_ADD_ACCOUNT)
+  },
+  reorderColumns: (orderedVisibleIds: string[]): void => {
+    void ipcRenderer.invoke(CHANNELS.REORDER_COLUMNS, orderedVisibleIds)
   },
 }
 

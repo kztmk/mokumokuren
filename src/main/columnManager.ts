@@ -134,6 +134,18 @@ export function removeColumn(accountId: string): void {
   hooks?.onChanged()
 }
 
+// Reorder the live columns to match the given account-id order (the visible columns only; hidden
+// accounts have no view here). Ids not present are ignored; views not named keep their relative
+// order at the end. Re-applies the layout so columns move on screen.
+export function reorderColumns(orderedIds: string[]): void {
+  const indexOf = (id: string): number => {
+    const i = orderedIds.indexOf(id)
+    return i === -1 ? orderedIds.length : i
+  }
+  orderedViews.sort((a, b) => indexOf(a.descriptor.accountId) - indexOf(b.descriptor.accountId))
+  hooks?.onChanged()
+}
+
 export function getOrderedViews(): readonly ManagedView[] {
   return orderedViews
 }
