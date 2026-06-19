@@ -541,6 +541,7 @@ multisnv-viewer/
 - キーボードショートカット実装（`Cmd/Ctrl+数字` でアクティブカラム切り替え）
 - 未読通知バッジ: `page-title-updated` イベントで数値を取得・カラムヘッダーに表示
 - ダークモード対応（OSテーマ設定に追従）
+- 【Phase4繰越・要否判断】IPC状態の per-window カプセル化: `ipcHandlers.ts` の module-scope な状態（`lastGoodProfile` / `lastEmitted` / `emittingColumns` / `rerunRequested` / `currentWin` / `pollTimer`）は現状、単一ウィンドウ前提＋`currentWin` 同一性ガードで対応。**真のマルチウィンドウ（複数メインウィンドウ）を実装する場合のみ**、これらを `setupIpcHandlers` 内ローカル化（または状態オブジェクト注入）＋`event.sender` ベースのルーティングへ移行する。マルチウィンドウを採用しない方針なら現状維持で対応不要。※Phase4 コードレビューで複数回（13/14/16/19巡目）指摘・YAGNI判断で保留した項目。
 
 **完了基準**
 - 3サービス混在で計10アカウントを追加・削除・並び替えできる
