@@ -22,26 +22,30 @@ function App(): React.JSX.Element {
   // Mirror of activeColumnId readable inside the (empty-deps) IPC callbacks below, which would
   // otherwise close over the stale initial value.
   const activeColumnIdRef = useRef<string | null>(null)
-  useEffect(() => {
-    activeColumnIdRef.current = activeColumnId
-  }, [activeColumnId])
 
   useEffect(() => {
     // Set the initial active column exactly once, outside any state updater, so the IPC
     // side-effect can't run multiple times under StrictMode/concurrent re-invocation.
+    // setActive updates the ref synchronously alongside state, so a later IPC callback in the
+    // same tick reads the just-set value instead of a stale one left by a deferred effect.
+    const setActive = (id: string | null): void => {
+      activeColumnIdRef.current = id
+      setActiveColumnId(id)
+    }
+
     const unsubscribers = [
       window.electronAPI.onColumnLayout((snap) => {
         setColumns(snap.columns)
         if (snap.columns.length === 0) {
           // All columns gone — allow re-initialization if a layout arrives later.
           hasSetInitialActive.current = false
-          setActiveColumnId(null)
+          setActive(null)
           return
         }
         if (!hasSetInitialActive.current) {
           hasSetInitialActive.current = true
           const initialColumnId = snap.columns[0].accountId
-          setActiveColumnId(initialColumnId)
+          setActive(initialColumnId)
           window.electronAPI.setActiveColumn(initialColumnId)
           return
         }
@@ -53,13 +57,13 @@ function App(): React.JSX.Element {
         )
         if (!activeStillExists) {
           const nextActive = snap.columns[0].accountId
-          setActiveColumnId(nextActive)
+          setActive(nextActive)
           window.electronAPI.setActiveColumn(nextActive)
         }
       }),
 
       window.electronAPI.onActiveChanged((columnId) => {
-        setActiveColumnId(columnId)
+        setActive(columnId)
       }),
 
       window.electronAPI.onNavStateChanged((state) => {

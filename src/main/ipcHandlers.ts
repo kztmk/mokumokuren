@@ -165,6 +165,10 @@ async function emitAccountInfo(
     // The detection above is async; the window may have been closed in the meantime.
     if (win.isDestroyed()) return
     win.webContents.send(CHANNELS.ACCOUNTS_CHANGED, payload)
+  } catch (err) {
+    // Callers invoke this as `void emitAccountInfo(...)`, so a throw (e.g. the window/view torn
+    // down in the TOCTOU gap before .send) would otherwise surface as an unhandled rejection.
+    console.error(`Failed to emit account info for column ${columnId}:`, err)
   } finally {
     emittingColumns.delete(columnId)
   }
@@ -228,7 +232,7 @@ export function setupIpcHandlers(
   ipcMain.handle(CHANNELS.NAVIGATE, (event, columnId: string, menuKey: MenuKey) => {
     if (win.isDestroyed() || event.sender !== win.webContents) return
     const managedView = viewRegistry.get(columnId)
-    if (!managedView) return
+    if (!managedView || managedView.view.webContents.isDestroyed()) return
 
     const url = buildNavigationUrl(managedView, menuKey)
     if (!url) return
