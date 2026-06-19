@@ -113,8 +113,9 @@ function App(): React.JSX.Element {
     window.electronAPI.goForward(columnId)
   }
 
-  const handleClose = (): void => {
-    // Phase4: window.electronAPI.closeColumn(columnId)
+  const handleClose = (columnId: string): void => {
+    // Account deletion (main shows a confirm dialog, then wipes the session + removes the account).
+    window.electronAPI.closeColumn(columnId)
   }
 
   const handleSetVisible = (columnId: string, visible: boolean): void => {

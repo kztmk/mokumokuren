@@ -154,9 +154,9 @@ export function ColumnHeader({
         −
       </button>
 
-      {/* Close button */}
+      {/* Delete account button */}
       <button
-        title="閉じる"
+        title="アカウントを削除"
         style={{
           background: 'transparent',
           border: 'none',

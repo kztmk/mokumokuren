@@ -1,4 +1,4 @@
-import { ipcMain, type BrowserWindow, type WebContents } from 'electron'
+import { ipcMain, dialog, type BrowserWindow, type WebContents } from 'electron'
 import { CHANNELS } from '../shared/channels'
 import {
   COMPOSE_URL,
@@ -9,7 +9,8 @@ import {
   type ServiceName,
 } from '../renderer/src/services'
 import { addColumn, removeColumn, type ManagedView } from './columnManager'
-import { getAccounts, getAccountById, updateAccount } from './accountStore'
+import { getAccounts, getAccountById, updateAccount, removeAccount } from './accountStore'
+import { clearSessionData } from './sessionManager'
 
 // Extracts the account HANDLE (not the display name): it feeds buildNavigationUrl's
 // `:username` substitution, so it must be the URL handle. Sourced from the logged-in user's
@@ -391,8 +392,31 @@ export function setupIpcHandlers(
     broadcastAccounts(win)
   })
 
-  ipcMain.handle(CHANNELS.CLOSE_COLUMN, () => {
-    // Phase5 scope.
+  ipcMain.handle(CHANNELS.CLOSE_COLUMN, async (event, columnId: string) => {
+    if (win.isDestroyed() || event.sender !== win.webContents) return
+    const account = getAccountById(columnId)
+    if (!account) return
+
+    // Confirm before a destructive, irreversible delete (removes the persisted session too).
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'warning',
+      buttons: ['キャンセル', '削除'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'アカウントを削除',
+      message: `「${account.displayName || account.service}」を削除しますか？`,
+      detail:
+        'このアカウントのログイン情報・セッションデータも完全に削除されます。この操作は取り消せません。',
+    })
+    if (response !== 1) return
+    if (win.isDestroyed()) return
+
+    // Tear down the live column (no-op if the account was hidden), wipe its on-disk session, then
+    // drop it from the store and tell the renderer.
+    removeColumn(columnId)
+    await clearSessionData({ service: account.service, accountId: account.id })
+    removeAccount(columnId)
+    if (!win.isDestroyed()) broadcastAccounts(win)
   })
 
   ipcMain.handle(CHANNELS.REQUEST_ADD_ACCOUNT, () => {
