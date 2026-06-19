@@ -132,13 +132,27 @@ async function emitAccountInfo(
     // isLoggedIn awaits DOM/cookie checks; the view may have been torn down meanwhile.
     if (wc.isDestroyed()) return
 
+    // While a page is still loading the DOM-based checks transiently read as logged-out (the
+    // login chrome hasn't rendered yet). Don't emit that false state — did-finish-load and the
+    // poll re-check once the page settles, so a real logout is still reported shortly after.
+    if (!loggedIn && wc.isLoading()) return
+
     let username: string | null = null
     let avatarUrl: string | null = null
     if (loggedIn) {
-      const [rawUsername, scrapedAvatar] = await Promise.all([
-        wc.executeJavaScript(USERNAME_SELECTOR[service]).catch(() => null),
-        wc.executeJavaScript(AVATAR_URL_SELECTOR[service]).catch(() => null),
-      ])
+      // Only run the scraper scripts on the service's own domain. X stays logged-in off-domain
+      // (cookie-based), but executeJavaScript must never touch an untrusted external page — fall
+      // back to the cached handle/avatar there instead.
+      let rawUsername: string | null = null
+      let scrapedAvatar: string | null = null
+      if (isOnServiceDomain(wc, service)) {
+        const [u, a] = await Promise.all([
+          wc.executeJavaScript(USERNAME_SELECTOR[service]).catch(() => null),
+          wc.executeJavaScript(AVATAR_URL_SELECTOR[service]).catch(() => null),
+        ])
+        rawUsername = u
+        scrapedAvatar = a
+      }
       // Reject anything that isn't a well-formed handle for this platform (untrusted DOM input).
       const scrapedUsername =
         typeof rawUsername === 'string' && HANDLE_PATTERN[service].test(rawUsername)
