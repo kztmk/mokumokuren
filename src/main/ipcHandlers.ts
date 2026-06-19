@@ -67,8 +67,10 @@ const HANDLE_PATTERN: Record<ServiceName, RegExp> = {
   x: /^[a-zA-Z0-9_]{1,15}$/,
   // Separators (`.`/`-`) only allowed *between* alphanumeric runs — no leading/trailing/repeated
   // ones. This rejects values like `..` that would otherwise traverse buildNavigationUrl's
-  // `:username` path (e.g. /profile/../lists collapsing to /lists).
-  bluesky: /^[a-zA-Z0-9]+([.-][a-zA-Z0-9]+)*$/,
+  // `:username` path (e.g. /profile/../lists collapsing to /lists). The leading length lookaheads
+  // bound the input (Bluesky/DNS: ≤253 total, ≤63 per label) so an injected megastring can't
+  // burn CPU/memory in the match/replace.
+  bluesky: /^(?=[a-zA-Z0-9.-]{1,253}$)[a-zA-Z0-9]{1,63}([.-][a-zA-Z0-9]{1,63})*$/,
   threads: /^(?=[a-zA-Z0-9._]{1,30}$)[a-zA-Z0-9_]+([.][a-zA-Z0-9_]+)*$/,
 }
 
@@ -238,7 +240,7 @@ function buildNavigationUrl(view: ManagedView, menuKey: MenuKey): string | null 
     }
   }
 
-  const resolvedPath = path.replace(':username', username ?? '')
+  const resolvedPath = path.replaceAll(':username', username ?? '')
   if (resolvedPath.includes(':username')) return null
 
   const url = new URL(resolvedPath, baseUrl)
