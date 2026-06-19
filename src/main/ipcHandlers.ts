@@ -70,6 +70,10 @@ const lastEmitted = new Map<string, string>()
 // polling can fire it concurrently for the same column. Drop overlapping runs — the in-flight
 // one captures current state, and the 4s poll re-checks shortly after regardless.
 const emittingColumns = new Set<string>()
+// The window that currently owns the process-global IPC handlers. ipcMain.handle is global, so
+// on the macOS close→activate→re-create cycle a stale window's `closed` listener could otherwise
+// tear down the *new* window's handlers; gate cleanup on identity against this.
+let currentWin: BrowserWindow | null = null
 
 async function emitAccountInfo(
   columnId: string,
@@ -163,6 +167,7 @@ export function setupIpcHandlers(
   win: BrowserWindow,
   isLoggedIn: IsLoggedInFn
 ): void {
+  currentWin = win
   let activeColumnId: string | null = null
 
   // ipcMain.handle is process-global; clear any prior registration first so re-invocation
@@ -283,12 +288,18 @@ export function setupIpcHandlers(
   // be removed here, otherwise the second registration throws and the per-column state leaks.
   win.on('closed', () => {
     clearInterval(pollTimer)
-    // Module-level caches would otherwise carry stale state into a re-created window.
-    lastGoodProfile.clear()
-    lastEmitted.clear()
-    emittingColumns.clear()
-    for (const channel of HANDLED_CHANNELS) {
-      ipcMain.removeHandler(channel)
+    // Only the window that still owns the global handlers may tear them down. If a new window
+    // was already created (and re-registered) before this `closed` fired, currentWin points at
+    // it — skipping the cleanup avoids unregistering the new window's live handlers.
+    if (currentWin === win) {
+      // Module-level caches would otherwise carry stale state into a re-created window.
+      lastGoodProfile.clear()
+      lastEmitted.clear()
+      emittingColumns.clear()
+      for (const channel of HANDLED_CHANNELS) {
+        ipcMain.removeHandler(channel)
+      }
+      currentWin = null
     }
   })
 }

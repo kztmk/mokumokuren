@@ -123,7 +123,10 @@ export function Sidebar({
           const isActive = col.accountId === activeColumnId
           const info = accountInfos[col.accountId]
           const effectiveUsername = info?.username ?? col.username
-          const loggedIn = info?.loggedIn ?? false
+          // Before the first account-info update arrives, fall back to the persisted login
+          // state (a real username, not the startup 'proto' placeholder) so accounts don't
+          // briefly flash logged-out on startup.
+          const loggedIn = info?.loggedIn ?? (col.username !== null && col.username !== 'proto')
           const avatarUrl = info?.avatarUrl ?? null
           const badgeColor = SERVICE_META[col.service].badgeColor
           return (
