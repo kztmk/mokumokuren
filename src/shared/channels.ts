@@ -10,5 +10,6 @@ export const CHANNELS = {
   NAV_STATE_CHANGED: 'nav-state-changed',
   COLUMN_LAYOUT: 'column-layout',
   ACCOUNTS_CHANGED: 'accounts-changed',
+  ACCOUNTS_LIST: 'accounts-list',
   ACTIVE_CHANGED: 'active-changed',
 } as const

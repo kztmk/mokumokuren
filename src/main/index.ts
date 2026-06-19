@@ -6,7 +6,7 @@ import { addAccount, getAccounts, type Account } from './accountStore'
 import { isEncryptionAvailable } from './safeStorageWrapper'
 import { runIsolationHarness } from './isolationHarness'
 import { applyLayout, initLayoutManager } from './layoutManager'
-import { setupIpcHandlers } from './ipcHandlers'
+import { setupIpcHandlers, broadcastAccounts } from './ipcHandlers'
 import { initColumnManager, getViewRegistry } from './columnManager'
 
 const PROTOTYPE_ACCOUNTS: Parameters<typeof addAccount>[0][] = [
@@ -176,7 +176,10 @@ function createWindow(): void {
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'))
   }
-  win.webContents.on('did-finish-load', () => applyLayout())
+  win.webContents.on('did-finish-load', () => {
+    applyLayout()
+    broadcastAccounts(win)
+  })
 }
 
 app.whenReady().then(() => {

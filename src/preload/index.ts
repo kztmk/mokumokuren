@@ -1,7 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { CHANNELS } from '../shared/channels'
-import type { ColumnLayoutSnapshot, MenuKey, ServiceName } from '../renderer/src/services'
+import type {
+  AccountSummary,
+  ColumnLayoutSnapshot,
+  MenuKey,
+  ServiceName,
+} from '../renderer/src/services'
 
 type AccountInfo = {
   columnId: string
@@ -14,6 +19,7 @@ type NavState = { columnId: string; canGoBack: boolean; canGoForward: boolean }
 type Unsubscribe = () => void
 type BridgeAPI = {
   onColumnLayout: (callback: (snap: ColumnLayoutSnapshot) => void) => Unsubscribe
+  onAccountsList: (callback: (accounts: AccountSummary[]) => void) => Unsubscribe
   onAccountsChanged: (callback: (info: AccountInfo) => void) => Unsubscribe
   navigate: (columnId: string, menuKey: MenuKey) => void
   setActiveColumn: (columnId: string) => void
@@ -34,6 +40,11 @@ const bridgeAPI: BridgeAPI = {
     const listener = (_: unknown, snap: ColumnLayoutSnapshot): void => callback(snap)
     ipcRenderer.on(CHANNELS.COLUMN_LAYOUT, listener)
     return () => ipcRenderer.removeListener(CHANNELS.COLUMN_LAYOUT, listener)
+  },
+  onAccountsList: (callback: (accounts: AccountSummary[]) => void): Unsubscribe => {
+    const listener = (_: unknown, accounts: AccountSummary[]): void => callback(accounts)
+    ipcRenderer.on(CHANNELS.ACCOUNTS_LIST, listener)
+    return () => ipcRenderer.removeListener(CHANNELS.ACCOUNTS_LIST, listener)
   },
   onAccountsChanged: (callback: (info: AccountInfo) => void): Unsubscribe => {
     const listener = (_: unknown, info: AccountInfo): void => callback(info)

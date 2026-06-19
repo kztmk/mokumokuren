@@ -80,10 +80,15 @@ function buildManagedView(account: Account): ManagedView {
 }
 
 // Create the view, register it, wire IPC listeners (before load, so did-finish-load fires), then
-// start loading the service. Layout is applied by the caller so a batch of inserts re-lays out once.
-function instantiateColumn(account: Account): ManagedView {
+// start loading the service. atIndex places the column at a specific layout position (used when
+// re-showing a hidden column so it returns to its order slot); omitted/out-of-range appends.
+function instantiateColumn(account: Account, atIndex?: number): ManagedView {
   const mv = buildManagedView(account)
-  orderedViews.push(mv)
+  if (atIndex === undefined || atIndex < 0 || atIndex >= orderedViews.length) {
+    orderedViews.push(mv)
+  } else {
+    orderedViews.splice(atIndex, 0, mv)
+  }
   registry.set(account.id, mv)
   hooks?.onViewAdded(mv)
   mv.view.webContents.loadURL(SNS_URLS[account.service]).catch((err) => {
@@ -103,8 +108,8 @@ export function initColumnManager(
   hooks.onChanged()
 }
 
-export function addColumn(account: Account): ManagedView {
-  const mv = instantiateColumn(account)
+export function addColumn(account: Account, atIndex?: number): ManagedView {
+  const mv = instantiateColumn(account, atIndex)
   hooks?.onChanged()
   return mv
 }

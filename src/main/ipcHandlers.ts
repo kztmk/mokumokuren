@@ -8,7 +8,8 @@ import {
   type MenuKey,
   type ServiceName,
 } from '../renderer/src/services'
-import type { ManagedView } from './columnManager'
+import { addColumn, removeColumn, type ManagedView } from './columnManager'
+import { getAccounts, getAccountById, updateAccount } from './accountStore'
 
 // Extracts the account HANDLE (not the display name): it feeds buildNavigationUrl's
 // `:username` substitution, so it must be the URL handle. Sourced from the logged-in user's
@@ -86,6 +87,25 @@ type IsLoggedInFn = (wc: WebContents, service: string) => Promise<boolean | null
 export type IpcController = {
   registerView: (mv: ManagedView) => void
   unregisterView: (accountId: string) => void
+}
+
+// Push the full account list (visible + hidden), order-sorted, to the renderer. Called on startup
+// and after any account mutation (visibility toggle, and — later phases — add/delete/reorder) so
+// the sidebar can render hidden accounts and offer them for re-showing.
+export function broadcastAccounts(win: BrowserWindow): void {
+  if (win.isDestroyed() || win.webContents.isDestroyed()) return
+  const summaries = getAccounts()
+    .slice()
+    .sort((a, b) => a.order - b.order)
+    .map((a) => ({
+      id: a.id,
+      service: a.service,
+      displayName: a.displayName,
+      username: a.username,
+      isVisible: a.isVisible,
+      order: a.order,
+    }))
+  win.webContents.send(CHANNELS.ACCOUNTS_LIST, summaries)
 }
 
 // Last successfully scraped profile per column. Username/avatar selectors only resolve on
@@ -342,8 +362,33 @@ export function setupIpcHandlers(
     }
   })
 
-  ipcMain.handle(CHANNELS.SET_COLUMN_VISIBLE, () => {
-    // Phase5 scope.
+  ipcMain.handle(CHANNELS.SET_COLUMN_VISIBLE, (event, columnId: string, visible: boolean) => {
+    if (win.isDestroyed() || event.sender !== win.webContents) return
+    const account = getAccountById(columnId)
+    if (!account || account.isVisible === visible) return
+
+    // Persist first so the column set survives restart and the order-position computation below
+    // sees the new visibility.
+    updateAccount(columnId, { isVisible: visible })
+
+    if (visible) {
+      const updated = getAccountById(columnId)
+      if (updated) {
+        // Re-insert at the account's order position among the now-visible accounts (not appended),
+        // so a re-shown column returns to where it belongs. The view is recreated from the
+        // persisted session, so the login state is preserved.
+        const insertIndex = getAccounts()
+          .filter((a) => a.isVisible)
+          .sort((a, b) => a.order - b.order)
+          .findIndex((a) => a.id === columnId)
+        addColumn(updated, insertIndex === -1 ? undefined : insertIndex)
+      }
+    } else {
+      // Destroys the WebContentsView but leaves the persisted session on disk intact.
+      removeColumn(columnId)
+    }
+
+    broadcastAccounts(win)
   })
 
   ipcMain.handle(CHANNELS.CLOSE_COLUMN, () => {

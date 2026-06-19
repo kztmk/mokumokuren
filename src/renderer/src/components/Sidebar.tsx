@@ -1,5 +1,6 @@
 import {
   ACTIVE_BORDER_COLOR,
+  type AccountSummary,
   type ColumnDescriptor,
   type MenuKey,
   type ServiceName,
@@ -32,20 +33,24 @@ type AccountInfo = { username: string | null; avatarUrl: string | null; loggedIn
 
 type SidebarProps = {
   columns: ColumnDescriptor[]
+  accounts: AccountSummary[]
   activeColumnId: string | null
   accountInfos: Record<string, AccountInfo>
   onNavigate: (columnId: string, menuKey: MenuKey) => void
   onSetActive: (columnId: string) => void
+  onShowColumn: (columnId: string) => void
   onComposePost: (service: ServiceName) => void
   onRequestAddAccount: (service: ServiceName) => void
 }
 
 export function Sidebar({
   columns,
+  accounts,
   activeColumnId,
   accountInfos,
   onNavigate,
   onSetActive,
+  onShowColumn,
   onComposePost,
   onRequestAddAccount,
 }: SidebarProps): React.JSX.Element {
@@ -119,23 +124,87 @@ export function Sidebar({
           paddingBottom: 8,
         }}
       >
-        {columns.slice(0, 10).map((col) => {
-          const isActive = col.accountId === activeColumnId
-          const info = accountInfos[col.accountId]
-          const effectiveUsername = info?.username ?? col.username
+        {accounts.slice(0, 10).map((acc) => {
+          const badgeColor = SERVICE_META[acc.service].badgeColor
+
+          // Hidden account: session preserved but no live column. Render a dimmed, dashed icon
+          // that re-shows the column on click (rather than activating it).
+          if (!acc.isVisible) {
+            return (
+              <div
+                key={acc.id}
+                title={`${acc.displayName || acc.service}（非表示 — クリックで表示）`}
+                onClick={() => onShowColumn(acc.id)}
+                style={{
+                  position: 'relative',
+                  width: 36,
+                  height: 36,
+                  borderRadius: 18,
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                <div
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    borderRadius: 18,
+                    background: '#1f1f1f',
+                    color: '#5a5a5a',
+                    fontSize: 11,
+                    fontWeight: 'bold',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxSizing: 'border-box',
+                    overflow: 'hidden',
+                    opacity: 0.4,
+                    filter: 'grayscale(100%)',
+                    border: '1px dashed #444',
+                  }}
+                >
+                  {acc.service[0].toUpperCase()}
+                </div>
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: -2,
+                    right: -2,
+                    width: 16,
+                    height: 16,
+                    borderRadius: 8,
+                    background: '#333',
+                    border: '2px solid #000',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#bbb',
+                    fontSize: 9,
+                    fontWeight: 'bold',
+                    lineHeight: 1,
+                  }}
+                >
+                  ▸
+                </div>
+              </div>
+            )
+          }
+
+          const isActive = acc.id === activeColumnId
+          const info = accountInfos[acc.id]
+          const effectiveUsername = info?.username ?? acc.username
           // Before the first account-info update arrives, fall back to the persisted login
           // state (a real username, not the startup 'proto' placeholder) so accounts don't
           // briefly flash logged-out on startup.
-          const loggedIn = info?.loggedIn ?? (col.username !== null && col.username !== 'proto')
+          const loggedIn = info?.loggedIn ?? (acc.username !== null && acc.username !== 'proto')
           const avatarUrl = info?.avatarUrl ?? null
-          const badgeColor = SERVICE_META[col.service].badgeColor
           return (
             <div
-              key={col.accountId}
+              key={acc.id}
               title={
                 loggedIn && effectiveUsername
-                  ? `@${effectiveUsername} (${col.service})`
-                  : `未ログイン (${col.service})`
+                  ? `@${effectiveUsername} (${acc.service})`
+                  : `未ログイン (${acc.service})`
               }
               style={{
                 position: 'relative',
@@ -149,7 +218,7 @@ export function Sidebar({
                   : 'none',
               }}
               onClick={() => {
-                onSetActive(col.accountId)
+                onSetActive(acc.id)
               }}
             >
               <div
@@ -173,7 +242,7 @@ export function Sidebar({
                     !isActive && loggedIn ? 'inset 0 0 0 1px rgba(255,255,255,0.18)' : 'none',
                 }}
               >
-                {col.service[0].toUpperCase()}
+                {acc.service[0].toUpperCase()}
                 {avatarUrl && (
                   <img
                     key={avatarUrl}

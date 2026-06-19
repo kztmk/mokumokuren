@@ -1,11 +1,17 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import type { ColumnLayoutSnapshot, MenuKey, ServiceName } from '../renderer/src/services'
+import type {
+  AccountSummary,
+  ColumnLayoutSnapshot,
+  MenuKey,
+  ServiceName,
+} from '../renderer/src/services'
 
 type NavState = { columnId: string; canGoBack: boolean; canGoForward: boolean }
 type Unsubscribe = () => void
 
 interface ElectronBridgeAPI {
   onColumnLayout: (callback: (snap: ColumnLayoutSnapshot) => void) => Unsubscribe
+  onAccountsList: (callback: (accounts: AccountSummary[]) => void) => Unsubscribe
   onAccountsChanged: (
     callback: (info: {
       columnId: string

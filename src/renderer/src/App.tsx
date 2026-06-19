@@ -3,6 +3,7 @@ import { Sidebar } from './components/Sidebar'
 import { ColumnHeader } from './components/ColumnHeader'
 import {
   ACTIVE_BORDER_COLOR,
+  type AccountSummary,
   type ColumnDescriptor,
   type MenuKey,
   type ServiceName,
@@ -14,6 +15,7 @@ type AccountInfo = { username: string | null; avatarUrl: string | null; loggedIn
 
 function App(): React.JSX.Element {
   const [columns, setColumns] = useState<ColumnDescriptor[]>([])
+  const [accounts, setAccounts] = useState<AccountSummary[]>([])
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
   const [navStates, setNavStates] = useState<Record<string, NavState>>({})
   const [accountInfos, setAccountInfos] = useState<Record<string, AccountInfo>>({})
@@ -60,6 +62,10 @@ function App(): React.JSX.Element {
           setActive(nextActive)
           window.electronAPI.setActiveColumn(nextActive)
         }
+      }),
+
+      window.electronAPI.onAccountsList((list) => {
+        setAccounts(list)
       }),
 
       window.electronAPI.onActiveChanged((columnId) => {
@@ -111,8 +117,12 @@ function App(): React.JSX.Element {
     // Phase4: window.electronAPI.closeColumn(columnId)
   }
 
-  const handleSetVisible = (): void => {
-    // Phase4: window.electronAPI.setColumnVisible(columnId, visible)
+  const handleSetVisible = (columnId: string, visible: boolean): void => {
+    window.electronAPI.setColumnVisible(columnId, visible)
+  }
+
+  const handleShowColumn = (columnId: string): void => {
+    window.electronAPI.setColumnVisible(columnId, true)
   }
 
   const handleComposePost = (service: ServiceName): void => {
@@ -127,10 +137,12 @@ function App(): React.JSX.Element {
     <>
       <Sidebar
         columns={columns}
+        accounts={accounts}
         activeColumnId={activeColumnId}
         accountInfos={accountInfos}
         onNavigate={handleNavigate}
         onSetActive={handleSetActive}
+        onShowColumn={handleShowColumn}
         onComposePost={handleComposePost}
         onRequestAddAccount={handleRequestAddAccount}
       />
