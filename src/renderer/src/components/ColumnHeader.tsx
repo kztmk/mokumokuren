@@ -7,9 +7,13 @@ type ColumnHeaderProps = {
   x: number
   width: number
   isActive: boolean
+  canGoBack: boolean
+  canGoForward: boolean
   onSetActive: (columnId: string) => void
   onClose: (columnId: string) => void
   onSetVisible: (columnId: string, visible: boolean) => void
+  onGoBack: (columnId: string) => void
+  onGoForward: (columnId: string) => void
 }
 
 export function ColumnHeader({
@@ -19,9 +23,13 @@ export function ColumnHeader({
   x,
   width,
   isActive,
+  canGoBack,
+  canGoForward,
   onSetActive,
   onClose,
   onSetVisible,
+  onGoBack,
+  onGoForward,
 }: ColumnHeaderProps): React.JSX.Element {
   const meta = SERVICE_META[service]
 
@@ -57,6 +65,48 @@ export function ColumnHeader({
           flexShrink: 0,
         }}
       />
+
+      {/* Back button */}
+      <button
+        title="戻る"
+        disabled={!canGoBack}
+        style={{
+          background: 'transparent',
+          border: 'none',
+          color: canGoBack ? '#e7e9ea' : '#444',
+          cursor: canGoBack ? 'pointer' : 'default',
+          fontSize: 16,
+          padding: '0 2px',
+          lineHeight: 1,
+        }}
+        onClick={() => {
+          // Let the click bubble to the header so navigating an inactive column also selects it.
+          onGoBack(columnId)
+        }}
+      >
+        ‹
+      </button>
+
+      {/* Forward button */}
+      <button
+        title="進む"
+        disabled={!canGoForward}
+        style={{
+          background: 'transparent',
+          border: 'none',
+          color: canGoForward ? '#e7e9ea' : '#444',
+          cursor: canGoForward ? 'pointer' : 'default',
+          fontSize: 16,
+          padding: '0 2px',
+          lineHeight: 1,
+        }}
+        onClick={() => {
+          // Let the click bubble to the header so navigating an inactive column also selects it.
+          onGoForward(columnId)
+        }}
+      >
+        ›
+      </button>
 
       {/* Username */}
       <span
