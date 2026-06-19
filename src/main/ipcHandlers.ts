@@ -1,4 +1,4 @@
-import { ipcMain, type BrowserWindow, type WebContentsView, type WebContents } from 'electron'
+import { ipcMain, type BrowserWindow, type WebContents } from 'electron'
 import { CHANNELS } from '../shared/channels'
 import {
   COMPOSE_URL,
@@ -8,6 +8,7 @@ import {
   type MenuKey,
   type ServiceName,
 } from '../renderer/src/services'
+import type { ManagedView } from './columnManager'
 
 // Extracts the account HANDLE (not the display name): it feeds buildNavigationUrl's
 // `:username` substitution, so it must be the URL handle. Sourced from the logged-in user's
@@ -74,20 +75,18 @@ const HANDLE_PATTERN: Record<ServiceName, RegExp> = {
   threads: /^(?=[a-zA-Z0-9._]{1,30}$)[a-zA-Z0-9_]+([.][a-zA-Z0-9_]+)*$/,
 }
 
-type ManagedView = {
-  view: WebContentsView
-  descriptor: {
-    accountId: string
-    service: ServiceName
-    username: string | null
-  }
-}
-
 type ViewRegistry = Map<string, ManagedView>
 
 // Tri-state: true / false / null. null means "indeterminate" (e.g. the Threads SPA shell hasn't
 // rendered yet) — emitAccountInfo skips emitting so the last known state holds.
 type IsLoggedInFn = (wc: WebContents, service: string) => Promise<boolean | null>
+
+// Returned by setupIpcHandlers so columnManager can wire/teardown a column's listeners and caches
+// when views are added or removed at runtime.
+export type IpcController = {
+  registerView: (mv: ManagedView) => void
+  unregisterView: (accountId: string) => void
+}
 
 // Last successfully scraped profile per column. Username/avatar selectors only resolve on
 // certain pages, so we fall back to the cached value while still logged in instead of
@@ -253,7 +252,7 @@ export function setupIpcHandlers(
   viewRegistry: ViewRegistry,
   win: BrowserWindow,
   isLoggedIn: IsLoggedInFn
-): void {
+): IpcController {
   // A new window is taking over the process-global handlers. The close-time cleanup only clears
   // the caches when currentWin still matched the closing window, so if that ordering didn't hold
   // (closed not yet fired / skipped), stale lastEmitted signatures would survive and the dedupe
@@ -355,32 +354,48 @@ export function setupIpcHandlers(
     // Phase5 scope.
   })
 
-  viewRegistry.forEach((managedView, columnId) => {
-    managedView.view.webContents.on('did-navigate', () => {
-      if (win.isDestroyed()) return
+  // Wire a single column's navigation/login listeners. Called for every existing view at setup
+  // and again by columnManager whenever a column is added at runtime.
+  const registerView = (managedView: ManagedView): void => {
+    const columnId = managedView.descriptor.accountId
+    const wc = managedView.view.webContents
+
+    const sendNavState = (): void => {
+      if (win.isDestroyed() || wc.isDestroyed()) return
       win.webContents.send(CHANNELS.NAV_STATE_CHANGED, {
         columnId,
-        canGoBack: managedView.view.webContents.canGoBack(),
-        canGoForward: managedView.view.webContents.canGoForward(),
+        canGoBack: wc.canGoBack(),
+        canGoForward: wc.canGoForward(),
       })
+    }
+
+    wc.on('did-navigate', () => {
+      sendNavState()
       void emitAccountInfo(columnId, managedView, win, isLoggedIn)
     })
-
-    managedView.view.webContents.on('did-finish-load', () => {
+    wc.on('did-finish-load', () => {
       void emitAccountInfo(columnId, managedView, win, isLoggedIn)
     })
-
-    managedView.view.webContents.on('did-navigate-in-page', (_event, _url, isMainFrame) => {
+    wc.on('did-navigate-in-page', (_event, _url, isMainFrame) => {
       if (!isMainFrame) return
-      if (win.isDestroyed()) return
-      win.webContents.send(CHANNELS.NAV_STATE_CHANGED, {
-        columnId,
-        canGoBack: managedView.view.webContents.canGoBack(),
-        canGoForward: managedView.view.webContents.canGoForward(),
-      })
+      sendNavState()
       void emitAccountInfo(columnId, managedView, win, isLoggedIn)
     })
-  })
+  }
+
+  // Drop a removed column's per-column state. Its webContents is destroyed by columnManager, which
+  // takes its listeners with it, so only the caches and active-column reference need clearing.
+  const unregisterView = (accountId: string): void => {
+    lastGoodProfile.delete(accountId)
+    lastEmitted.delete(accountId)
+    emittingColumns.delete(accountId)
+    rerunRequested.delete(accountId)
+    if (activeColumnId === accountId) activeColumnId = null
+  }
+
+  // Attach to any views that already exist (none at first setup; columnManager registers each as
+  // it instantiates them).
+  viewRegistry.forEach((managedView) => registerView(managedView))
 
   // Safety net: sign-outs in an SPA can clear the session without firing a navigation, so
   // poll login state and let the dedupe in emitAccountInfo suppress no-op updates. Clear any
@@ -416,4 +431,6 @@ export function setupIpcHandlers(
       currentWin = null
     }
   })
+
+  return { registerView, unregisterView }
 }

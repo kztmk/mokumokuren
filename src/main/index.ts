@@ -1,28 +1,13 @@
-import {
-  app,
-  shell,
-  BrowserWindow,
-  ipcMain,
-  WebContentsView,
-  type Session,
-  type WebContents,
-} from 'electron'
+import { app, shell, BrowserWindow, ipcMain, type Session, type WebContents } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { getOrCreateSession, applyUAToSession, type ServiceName } from './sessionManager'
 import { addAccount, getAccounts, type Account } from './accountStore'
 import { isEncryptionAvailable } from './safeStorageWrapper'
 import { runIsolationHarness } from './isolationHarness'
 import { applyLayout, initLayoutManager } from './layoutManager'
 import { setupIpcHandlers } from './ipcHandlers'
-import { SNS_URLS } from '../renderer/src/services'
-
-const ALLOWED_HOSTS: Record<ServiceName, string[]> = {
-  x: ['x.com', 'twitter.com'],
-  bluesky: ['bsky.app', 'bsky.social'],
-  threads: ['threads.net', 'instagram.com'],
-}
+import { initColumnManager, getViewRegistry } from './columnManager'
 
 const PROTOTYPE_ACCOUNTS: Parameters<typeof addAccount>[0][] = [
   {
@@ -167,51 +152,14 @@ function createWindow(): void {
     },
   })
 
-  const views = getStartupAccounts().map((account) => {
-    const ses = getOrCreateSession({ service: account.service, accountId: account.id })
-    applyUAToSession(ses)
-    const view = new WebContentsView({
-      webPreferences: {
-        session: ses,
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-        allowRunningInsecureContent: false,
-      },
-    })
-    win.contentView.addChildView(view)
-    const allowedHosts = ALLOWED_HOSTS[account.service] ?? []
-    view.webContents.setWindowOpenHandler(({ url }) => {
-      try {
-        const { hostname } = new URL(url)
-        if (allowedHosts.some((h) => hostname === h || hostname.endsWith('.' + h))) {
-          return { action: 'allow' }
-        }
-      } catch {
-        // invalid URL → deny
-      }
-      shell.openExternal(url)
-      return { action: 'deny' }
-    })
-    return {
-      view,
-      descriptor: {
-        accountId: account.id,
-        service: account.service,
-        username: account.username,
-      },
-    }
-  })
-
-  const viewRegistry = new Map(
-    views.map((managedView) => [managedView.descriptor.accountId, managedView])
-  )
-  setupIpcHandlers(viewRegistry, win, isLoggedIn)
-  initLayoutManager(win, views)
-  views.forEach((managedView) => {
-    managedView.view.webContents.loadURL(SNS_URLS[managedView.descriptor.service]).catch((err) => {
-      console.error(`Failed to load startup URL for ${managedView.descriptor.service}:`, err)
-    })
+  // setupIpcHandlers holds the (initially empty) registry reference and returns hooks so
+  // columnManager can attach/detach a column's IPC listeners as views come and go at runtime.
+  const ipc = setupIpcHandlers(getViewRegistry(), win, isLoggedIn)
+  initLayoutManager(win)
+  initColumnManager(win, getStartupAccounts(), {
+    onViewAdded: ipc.registerView,
+    onViewRemoved: ipc.unregisterView,
+    onChanged: applyLayout,
   })
 
   win.on('ready-to-show', () => {
