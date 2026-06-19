@@ -148,7 +148,9 @@ async function isLoggedIn(wc: WebContents, service: string): Promise<boolean | n
   try {
     const domExpr = DOM_LOGIN_EXPR[service]
     if (domExpr) {
-      return await wc.executeJavaScript(domExpr, true).catch(() => false)
+      // A transient execution failure (mid-navigation/render) is indeterminate, not a logout —
+      // return null so the caller keeps the last state instead of flashing logged-out.
+      return await wc.executeJavaScript(domExpr, true).catch(() => null)
     }
     return await hasAuthCookie(wc.session, service)
   } catch {
