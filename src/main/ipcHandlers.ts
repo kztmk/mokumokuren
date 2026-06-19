@@ -4,15 +4,10 @@ import {
   COMPOSE_URL,
   NAV_MAP,
   POST_TRIGGER,
+  SNS_URLS,
   type MenuKey,
   type ServiceName,
 } from '../renderer/src/services'
-
-const SNS_URLS: Record<ServiceName, URL> = {
-  x: new URL('https://x.com'),
-  bluesky: new URL('https://bsky.app'),
-  threads: new URL('https://www.threads.net'),
-}
 
 // Extracts the account HANDLE (not the display name): it feeds buildNavigationUrl's
 // `:username` substitution, so it must be the URL handle. Sourced from the logged-in user's
@@ -227,17 +222,23 @@ const HANDLED_CHANNELS = [
 ]
 
 function buildNavigationUrl(view: ManagedView, menuKey: MenuKey): string | null {
-  const baseUrl = SNS_URLS[view.descriptor.service]
+  const baseUrl = new URL(SNS_URLS[view.descriptor.service])
   const path = NAV_MAP[view.descriptor.service][menuKey]
   // `!path` also rejects an unknown menuKey (undefined) sent from the renderer, which would
   // otherwise throw on path.includes() below.
   if (!path) return null
 
-  // Without this, a null username collapses `:username` to '' and yields a broken URL
-  // (e.g. /profile/) that passes the includes() check below; bail out instead.
-  if (path.includes(':username') && !view.descriptor.username) return null
+  const username = view.descriptor.username
+  // Re-validate the handle before substituting it into the path. descriptor.username can come
+  // from persisted account data (not only the HANDLE_PATTERN-checked scrape), so a malformed
+  // value (null, or one containing `..`) must not collapse `:username` to '' / traverse the path.
+  if (path.includes(':username')) {
+    if (!username || !HANDLE_PATTERN[view.descriptor.service].test(username)) {
+      return null
+    }
+  }
 
-  const resolvedPath = path.replace(':username', view.descriptor.username ?? '')
+  const resolvedPath = path.replace(':username', username ?? '')
   if (resolvedPath.includes(':username')) return null
 
   const url = new URL(resolvedPath, baseUrl)

@@ -16,12 +16,7 @@ import { isEncryptionAvailable } from './safeStorageWrapper'
 import { runIsolationHarness } from './isolationHarness'
 import { applyLayout, initLayoutManager } from './layoutManager'
 import { setupIpcHandlers } from './ipcHandlers'
-
-const SNS_URLS: Record<ServiceName, string> = {
-  x: 'https://x.com',
-  bluesky: 'https://bsky.app',
-  threads: 'https://www.threads.net',
-}
+import { SNS_URLS } from '../renderer/src/services'
 
 const ALLOWED_HOSTS: Record<ServiceName, string[]> = {
   x: ['x.com', 'twitter.com'],

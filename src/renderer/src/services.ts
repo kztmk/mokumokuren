@@ -56,6 +56,14 @@ export const COMPOSE_URL: Record<ServiceName, string> = {
   threads: '/intent/post',
 }
 
+// Canonical per-service origin. Single source of truth shared by the main process (startup
+// loadURL, navigation/compose URL building) so the base URLs can't drift between files.
+export const SNS_URLS: Record<ServiceName, string> = {
+  x: 'https://x.com',
+  bluesky: 'https://bsky.app',
+  threads: 'https://www.threads.net',
+}
+
 export const ACTIVE_BORDER_COLOR = '#FFB200'
 
 // Fallback only. COMPOSE_URL is preferred; Phase4 wires this into navigation.
