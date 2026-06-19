@@ -254,6 +254,17 @@ export function setupIpcHandlers(
   win: BrowserWindow,
   isLoggedIn: IsLoggedInFn
 ): void {
+  // A new window is taking over the process-global handlers. The close-time cleanup only clears
+  // the caches when currentWin still matched the closing window, so if that ordering didn't hold
+  // (closed not yet fired / skipped), stale lastEmitted signatures would survive and the dedupe
+  // would suppress the new window's initial ACCOUNTS_CHANGED — leaving its UI stuck. Clear here to
+  // guarantee a fresh start regardless of close-event ordering.
+  if (currentWin !== win) {
+    lastGoodProfile.clear()
+    lastEmitted.clear()
+    emittingColumns.clear()
+    rerunRequested.clear()
+  }
   currentWin = win
   let activeColumnId: string | null = null
 
