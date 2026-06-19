@@ -19,6 +19,12 @@ function App(): React.JSX.Element {
   const [accountInfos, setAccountInfos] = useState<Record<string, AccountInfo>>({})
   // Ref (not a local var) so the once-only guard survives StrictMode unmount/remount.
   const hasSetInitialActive = useRef(false)
+  // Mirror of activeColumnId readable inside the (empty-deps) IPC callbacks below, which would
+  // otherwise close over the stale initial value.
+  const activeColumnIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    activeColumnIdRef.current = activeColumnId
+  }, [activeColumnId])
 
   useEffect(() => {
     // Set the initial active column exactly once, outside any state updater, so the IPC
@@ -26,11 +32,29 @@ function App(): React.JSX.Element {
     const unsubscribers = [
       window.electronAPI.onColumnLayout((snap) => {
         setColumns(snap.columns)
-        if (!hasSetInitialActive.current && snap.columns.length > 0) {
+        if (snap.columns.length === 0) {
+          // All columns gone — allow re-initialization if a layout arrives later.
+          hasSetInitialActive.current = false
+          setActiveColumnId(null)
+          return
+        }
+        if (!hasSetInitialActive.current) {
           hasSetInitialActive.current = true
           const initialColumnId = snap.columns[0].accountId
           setActiveColumnId(initialColumnId)
           window.electronAPI.setActiveColumn(initialColumnId)
+          return
+        }
+        // The active column may have been removed (e.g. column close in a later phase). Fall
+        // back to the first column so the selection never points at a non-existent id. IPC stays
+        // outside any state updater to keep it single-fire under StrictMode.
+        const activeStillExists = snap.columns.some(
+          (c) => c.accountId === activeColumnIdRef.current
+        )
+        if (!activeStillExists) {
+          const nextActive = snap.columns[0].accountId
+          setActiveColumnId(nextActive)
+          window.electronAPI.setActiveColumn(nextActive)
         }
       }),
 

@@ -70,8 +70,11 @@ function isOnServiceDomain(wc: WebContents, service: ServiceName): boolean {
 // into a navigation target.
 const HANDLE_PATTERN: Record<ServiceName, RegExp> = {
   x: /^[a-zA-Z0-9_]{1,15}$/,
-  bluesky: /^[a-zA-Z0-9.-]+$/,
-  threads: /^[a-zA-Z0-9._]{1,30}$/,
+  // Separators (`.`/`-`) only allowed *between* alphanumeric runs — no leading/trailing/repeated
+  // ones. This rejects values like `..` that would otherwise traverse buildNavigationUrl's
+  // `:username` path (e.g. /profile/../lists collapsing to /lists).
+  bluesky: /^[a-zA-Z0-9]+([.-][a-zA-Z0-9]+)*$/,
+  threads: /^(?=[a-zA-Z0-9._]{1,30}$)[a-zA-Z0-9_]+([.][a-zA-Z0-9_]+)*$/,
 }
 
 type ManagedView = {
@@ -220,9 +223,10 @@ export function setupIpcHandlers(
 
   // Defense-in-depth: these handlers are process-global, so reject invocations whose sender
   // isn't the trusted main-window renderer (the WebContentsViews have no preload/ipcRenderer,
-  // but gate on identity regardless).
+  // but gate on identity regardless). isDestroyed() is checked first so a late IPC after the
+  // window closed can't throw "Object has been destroyed" on the win.webContents access.
   ipcMain.handle(CHANNELS.NAVIGATE, (event, columnId: string, menuKey: MenuKey) => {
-    if (event.sender !== win.webContents) return
+    if (win.isDestroyed() || event.sender !== win.webContents) return
     const managedView = viewRegistry.get(columnId)
     if (!managedView) return
 
@@ -235,7 +239,7 @@ export function setupIpcHandlers(
   })
 
   ipcMain.handle(CHANNELS.SET_ACTIVE_COLUMN, (event, columnId: string) => {
-    if (event.sender !== win.webContents) return
+    if (win.isDestroyed() || event.sender !== win.webContents) return
     if (!viewRegistry.has(columnId)) return
 
     activeColumnId = columnId
@@ -243,7 +247,7 @@ export function setupIpcHandlers(
   })
 
   ipcMain.handle(CHANNELS.GO_BACK, (event, columnId: string) => {
-    if (event.sender !== win.webContents) return
+    if (win.isDestroyed() || event.sender !== win.webContents) return
     const managedView = viewRegistry.get(columnId)
     if (!managedView || managedView.view.webContents.isDestroyed()) return
     if (!managedView.view.webContents.canGoBack()) return
@@ -252,7 +256,7 @@ export function setupIpcHandlers(
   })
 
   ipcMain.handle(CHANNELS.GO_FORWARD, (event, columnId: string) => {
-    if (event.sender !== win.webContents) return
+    if (win.isDestroyed() || event.sender !== win.webContents) return
     const managedView = viewRegistry.get(columnId)
     if (!managedView || managedView.view.webContents.isDestroyed()) return
     if (!managedView.view.webContents.canGoForward()) return
@@ -261,7 +265,7 @@ export function setupIpcHandlers(
   })
 
   ipcMain.handle(CHANNELS.COMPOSE_POST, async (event, service: string) => {
-    if (event.sender !== win.webContents) return
+    if (win.isDestroyed() || event.sender !== win.webContents) return
     if (!(service in COMPOSE_URL)) return
     if (activeColumnId === null) return
 

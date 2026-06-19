@@ -112,6 +112,11 @@ const THREADS_LOGIN_EXPR = `(() => {
       if (/^ログイン$/.test(t)) return false
       if (/instagram(で|アカウントで)?(続行|ログイン)/.test(t)) return false
     }
+    // Positive check: the absence of a login CTA isn't enough — a logged-out user can land on a
+    // sub-page with no login button (e.g. /terms, /privacy) and be misread as signed in. Require
+    // a logged-in-only signal: the app nav exposes the signed-in user's own profile link
+    // (/@handle), which legal/standalone pages lack.
+    if (!document.querySelector('a[href^="/@"]')) return false
     return true
   } catch {
     return false
