@@ -8,6 +8,7 @@ import { runIsolationHarness } from './isolationHarness'
 import { applyLayout, initLayoutManager } from './layoutManager'
 import { setupIpcHandlers, broadcastAccounts } from './ipcHandlers'
 import { initColumnManager, getViewRegistry } from './columnManager'
+import { getInitialWindowBounds, trackWindowState } from './windowState'
 
 // Phase5: a clean install starts with no accounts; the user adds them via the sidebar "+". All
 // *visible* accounts get a column on startup (hidden ones keep their session but no view). No cap
@@ -112,8 +113,9 @@ async function isLoggedIn(wc: WebContents, service: string): Promise<boolean | n
 
 function createWindow(): void {
   const win = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    ...getInitialWindowBounds(),
+    minWidth: 480,
+    minHeight: 400,
     show: false,
     autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
@@ -122,6 +124,7 @@ function createWindow(): void {
       sandbox: false,
     },
   })
+  trackWindowState(win)
 
   // setupIpcHandlers holds the (initially empty) registry reference and returns hooks so
   // columnManager can attach/detach a column's IPC listeners as views come and go at runtime.
