@@ -6,7 +6,7 @@ import { getAccounts, type Account } from './accountStore'
 import { isEncryptionAvailable } from './safeStorageWrapper'
 import { runIsolationHarness } from './isolationHarness'
 import { applyLayout, initLayoutManager } from './layoutManager'
-import { setupIpcHandlers, broadcastAccounts } from './ipcHandlers'
+import { setupIpcHandlers } from './ipcHandlers'
 import { initColumnManager, getViewRegistry } from './columnManager'
 import { getInitialWindowBounds, trackWindowState } from './windowState'
 
@@ -160,10 +160,8 @@ function createWindow(): void {
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'))
   }
-  win.webContents.on('did-finish-load', () => {
-    applyLayout()
-    broadcastAccounts(win)
-  })
+  // Initial layout + account list are pushed in response to the renderer's RENDERER_READY signal
+  // (see setupIpcHandlers), so they can't be dropped before the renderer registers its listeners.
 }
 
 app.whenReady().then(() => {

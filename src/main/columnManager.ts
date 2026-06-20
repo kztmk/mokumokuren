@@ -146,7 +146,9 @@ export function initColumnManager(
   // so we don't append to them and crash when applyLayout iterates destroyed views.
   closeAndClearColumns()
   for (const account of accounts) instantiateColumn(account)
-  hooks.onChanged()
+  // Use the param directly (it's non-null) rather than the module-level `hooks`, whose narrowing
+  // TS resets after the intervening calls because the `closed` closure can reassign it.
+  columnHooks.onChanged()
 }
 
 export function addColumn(account: Account, atIndex?: number): ManagedView {

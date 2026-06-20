@@ -101,6 +101,11 @@ function App(): React.JSX.Element {
       }),
     ]
 
+    // Listeners are now registered — tell main to push the initial layout + account list. Doing
+    // this here (rather than relying on the page-load event) avoids dropping the initial state if
+    // the broadcast would otherwise beat listener registration.
+    window.electronAPI.rendererReady()
+
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
   }, [])
 

@@ -25,6 +25,7 @@ import {
   removeAccount,
 } from './accountStore'
 import { clearSessionData } from './sessionManager'
+import { applyLayout } from './layoutManager'
 
 // Extracts the account HANDLE (not the display name): it feeds buildNavigationUrl's
 // `:username` substitution, so it must be the URL handle. Sourced from the logged-in user's
@@ -262,6 +263,7 @@ const HANDLED_CHANNELS = [
   CHANNELS.CLOSE_COLUMN,
   CHANNELS.REQUEST_ADD_ACCOUNT,
   CHANNELS.REORDER_COLUMNS,
+  CHANNELS.RENDERER_READY,
 ]
 
 function buildNavigationUrl(view: ManagedView, menuKey: MenuKey): string | null {
@@ -523,6 +525,15 @@ export function setupIpcHandlers(
     broadcastAccounts(win)
   })
 
+  // The renderer signals readiness once its IPC listeners are registered (in a useEffect). Push
+  // the current layout + account list in response, avoiding the race where a startup broadcast
+  // beats the renderer's listener registration and the initial state is dropped.
+  ipcMain.handle(CHANNELS.RENDERER_READY, (event) => {
+    if (win.isDestroyed() || event.sender !== win.webContents) return
+    applyLayout()
+    broadcastAccounts(win)
+  })
+
   // Wire a single column's navigation/login listeners. Called for every existing view at setup
   // and again by columnManager whenever a column is added at runtime.
   const registerView = (managedView: ManagedView): void => {
@@ -560,9 +571,10 @@ export function setupIpcHandlers(
       if (win.isDestroyed()) return
       // The unread count is prefixed at the start of the title (e.g. "(3) Home / X"). Anchor to
       // the start so a parenthesized number elsewhere (a year like "(2024)", a handle, etc.) isn't
-      // misread as unread.
-      const match = /^\s*\((\d+)\)/.exec(title)
-      const count = match ? Number(match[1]) : 0
+      // misread as unread. The optional `+` handles X's "(99+)" form — treat it as 100 so the
+      // header renders "99+".
+      const match = /^\s*\((\d+)(\+)?\)/.exec(title)
+      const count = match ? Number(match[1]) + (match[2] ? 1 : 0) : 0
       win.webContents.send(CHANNELS.UNREAD_CHANGED, { columnId, count })
     })
   }

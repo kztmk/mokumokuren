@@ -8,6 +8,7 @@ export const CHANNELS = {
   CLOSE_COLUMN: 'close-column',
   REQUEST_ADD_ACCOUNT: 'request-add-account',
   REORDER_COLUMNS: 'reorder-columns',
+  RENDERER_READY: 'renderer-ready',
   NAV_STATE_CHANGED: 'nav-state-changed',
   COLUMN_LAYOUT: 'column-layout',
   ACCOUNTS_CHANGED: 'accounts-changed',
