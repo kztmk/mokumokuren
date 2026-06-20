@@ -1,0 +1,76 @@
+name: Release
+
+# Push to the `release` branch builds the distributables:
+#   - macOS: Developer ID signed + notarized → published to GitHub Releases (draft)
+#   - Windows: MSIX/appx (unsigned; the Microsoft Store signs on ingestion) → uploaded as a CI
+#     artifact for manual submission to Partner Center
+# Required secrets and setup are documented in RELEASE.md.
+on:
+  push:
+    branches: [release]
+  workflow_dispatch:
+
+permissions:
+  contents: write # electron-builder needs this to create/update the GitHub Release
+
+jobs:
+  mac:
+    name: macOS (sign + notarize → GitHub Release)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build, sign, notarize & publish to GitHub Releases
+        run: |
+          npm run build
+          npx electron-builder --mac --publish always
+        env:
+          # GitHub Releases publish
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Developer ID Application certificate (base64 .p12 + its password)
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          # Notarization (notarytool) credentials
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+  windows:
+    name: Windows (MSIX for Microsoft Store)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build MSIX/appx (unsigned — the Microsoft Store signs on ingestion)
+        run: |
+          npm run build
+          npx electron-builder --win --publish never
+
+      - name: Upload Store package for Partner Center submission
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-store-package
+          path: |
+            dist/*.appx
+            dist/*.msix
+          if-no-files-found: error
