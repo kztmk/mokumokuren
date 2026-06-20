@@ -43,6 +43,12 @@ const orderedViews: ManagedView[] = []
 const registry = new Map<string, ManagedView>()
 
 function buildManagedView(account: Account): ManagedView {
+  // Guard before creating any resources so we don't leak a WebContentsView if there's no window.
+  const win = currentWindow
+  if (!win || win.isDestroyed()) {
+    throw new Error('columnManager: cannot create a column without an active window')
+  }
+
   const ses = getOrCreateSession({ service: account.service, accountId: account.id })
   applyUAToSession(ses)
   const view = new WebContentsView({
@@ -54,7 +60,7 @@ function buildManagedView(account: Account): ManagedView {
       allowRunningInsecureContent: false,
     },
   })
-  currentWindow!.contentView.addChildView(view)
+  win.contentView.addChildView(view)
 
   const allowedHosts = ALLOWED_HOSTS[account.service] ?? []
   view.webContents.setWindowOpenHandler(({ url }) => {

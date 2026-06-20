@@ -87,6 +87,20 @@ export function updateAccount(id: string, patch: Partial<Account>): void {
   )
 }
 
+// Assign `order` to each listed account by its position in orderedIds, in a single store write.
+// Reordering touches every account, so this avoids the O(n) synchronous disk writes (and O(n²)
+// array rebuilds) that calling updateAccount in a loop would incur.
+export function updateAccountsOrder(orderedIds: string[]): void {
+  const orderById = new Map(orderedIds.map((id, index) => [id, index]))
+  store.set(
+    'accounts',
+    getAccounts().map((account) => {
+      const order = orderById.get(account.id)
+      return order === undefined ? account : { ...account, order }
+    })
+  )
+}
+
 export function removeAccount(id: string): void {
   store.set(
     'accounts',

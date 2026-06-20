@@ -21,6 +21,7 @@ import {
   getAccountById,
   addAccount,
   updateAccount,
+  updateAccountsOrder,
   removeAccount,
 } from './accountStore'
 import { clearSessionData } from './sessionManager'
@@ -513,7 +514,7 @@ export function setupIpcHandlers(
       .sort((a, b) => a.order - b.order)
 
     const finalOrder = [...validIds, ...hidden.map((a) => a.id)]
-    finalOrder.forEach((id, index) => updateAccount(id, { order: index }))
+    updateAccountsOrder(finalOrder)
 
     reorderColumns(validIds)
     broadcastAccounts(win)
