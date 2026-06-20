@@ -138,6 +138,12 @@ export function initColumnManager(
   accounts: Account[],
   columnHooks: ColumnHooks
 ): void {
+  // Defensive: if a prior `closed` somehow didn't run before this re-init, clear any stale views
+  // FIRST — while currentWindow still points to the old window — so removeChildView detaches them
+  // from their actual parent rather than no-op'ing against the new window. Also prevents appending
+  // to stale entries / crashing when applyLayout iterates destroyed views.
+  closeAndClearColumns()
+
   currentWindow = window
   hooks = columnHooks
   // Tear everything down when this window closes so the views, the closed BrowserWindow, and the
@@ -151,9 +157,6 @@ export function initColumnManager(
       hooks = null
     }
   })
-  // Defensive: if a prior `closed` somehow didn't run before this re-init, clear any stale views
-  // so we don't append to them and crash when applyLayout iterates destroyed views.
-  closeAndClearColumns()
   for (const account of accounts) instantiateColumn(account)
   // Use the param directly (it's non-null) rather than the module-level `hooks`, whose narrowing
   // TS resets after the intervening calls because the `closed` closure can reassign it.
