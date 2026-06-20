@@ -57,7 +57,8 @@ const AVATAR_URL_SELECTOR: Record<ServiceName, string> = {
 const SERVICE_HOSTS: Record<ServiceName, string[]> = {
   x: ['x.com', 'twitter.com'],
   bluesky: ['bsky.app', 'bsky.social'],
-  threads: ['threads.net', 'instagram.com'],
+  // Threads migrated its primary domain to threads.com; keep threads.net for the redirect/legacy.
+  threads: ['threads.net', 'threads.com', 'instagram.com'],
 }
 
 function isOnServiceDomain(wc: WebContents, service: ServiceName): boolean {

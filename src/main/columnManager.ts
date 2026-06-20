@@ -21,7 +21,8 @@ export type ManagedView = {
 const ALLOWED_HOSTS: Record<ServiceName, string[]> = {
   x: ['x.com', 'twitter.com'],
   bluesky: ['bsky.app', 'bsky.social'],
-  threads: ['threads.net', 'instagram.com'],
+  // Threads migrated its primary domain to threads.com; keep threads.net for the redirect/legacy.
+  threads: ['threads.net', 'threads.com', 'instagram.com'],
 }
 
 // Lifecycle hooks injected by the entry point to keep this module decoupled: onViewAdded lets the
