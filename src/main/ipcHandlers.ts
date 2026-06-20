@@ -558,7 +558,10 @@ export function setupIpcHandlers(
     // number on the column header.
     wc.on('page-title-updated', (_event, title) => {
       if (win.isDestroyed()) return
-      const match = /\((\d+)\)/.exec(title)
+      // The unread count is prefixed at the start of the title (e.g. "(3) Home / X"). Anchor to
+      // the start so a parenthesized number elsewhere (a year like "(2024)", a handle, etc.) isn't
+      // misread as unread.
+      const match = /^\s*\((\d+)\)/.exec(title)
       const count = match ? Number(match[1]) : 0
       win.webContents.send(CHANNELS.UNREAD_CHANGED, { columnId, count })
     })
