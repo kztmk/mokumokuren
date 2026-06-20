@@ -112,6 +112,15 @@ export function initColumnManager(
 ): void {
   currentWindow = window
   hooks = columnHooks
+  // Clear the module-level references when this window closes so the closed BrowserWindow (and the
+  // hooks chain it captures) can be GC'd. Guard on identity so a newer window that already took
+  // over isn't wiped by a late `closed` from the old one.
+  window.on('closed', () => {
+    if (currentWindow === window) {
+      currentWindow = null
+      hooks = null
+    }
+  })
   // On macOS the window can be closed then re-created (dock click), calling this again. The
   // module-level collections still hold the previous window's views — actively close their
   // webContents (otherwise the orphaned pages keep running/leaking) before clearing, so we don't

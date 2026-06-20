@@ -79,8 +79,17 @@ export function Sidebar({
         boxSizing: 'border-box',
       }}
     >
-      {/* Navigation items */}
-      <nav style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 0', flex: 1 }}>
+      {/* Navigation items. grow to push the account list toward the bottom, but never shrink
+          (flexShrink:0) so the nav icons aren't clipped when the account list overflows. */}
+      <nav
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 4,
+          padding: '8px 0',
+          flex: '1 0 auto',
+        }}
+      >
         {activeService !== null &&
           NAV_KEYS.map((key) => {
             const disabled = isMenuDisabled(activeService, key, activeUsername)
@@ -114,7 +123,7 @@ export function Sidebar({
           })}
       </nav>
 
-      {/* Account icon list (max 10) */}
+      {/* Account icon list — scrolls vertically when there are more accounts than fit. */}
       <div
         style={{
           display: 'flex',
@@ -122,9 +131,11 @@ export function Sidebar({
           alignItems: 'center',
           gap: 8,
           paddingBottom: 8,
+          minHeight: 0,
+          overflowY: 'auto',
         }}
       >
-        {accounts.slice(0, 10).map((acc) => {
+        {accounts.map((acc) => {
           const badgeColor = SERVICE_META[acc.service].badgeColor
 
           // Hidden account: session preserved but no live column. Render a dimmed, dashed icon

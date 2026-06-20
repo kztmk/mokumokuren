@@ -503,8 +503,10 @@ export function setupIpcHandlers(
 
     // Only the dragged visible columns define the new sequence; hidden accounts keep their
     // relative order and follow. Persist sequential `order` for all accounts so the arrangement
-    // survives restart, then reorder the live views to match and re-broadcast.
-    const validIds = orderedVisibleIds.filter((id) => getAccountById(id)?.isVisible)
+    // survives restart, then reorder the live views to match and re-broadcast. Dedupe first so a
+    // malformed payload with repeated ids can't produce duplicate/conflicting order writes.
+    const uniqueIds = Array.from(new Set(orderedVisibleIds))
+    const validIds = uniqueIds.filter((id) => getAccountById(id)?.isVisible)
     if (validIds.length === 0) return
     const hidden = getAccounts()
       .filter((a) => !validIds.includes(a.id))
