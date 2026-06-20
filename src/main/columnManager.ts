@@ -115,7 +115,16 @@ function instantiateColumn(account: Account, atIndex?: number): ManagedView {
 // running/leaking) and drop all references. Used both when the window closes and when a new
 // window re-initializes, so stale views never survive into a new session.
 function closeAndClearColumns(): void {
+  // Detach from the live window before closing, so views never linger in the contentView
+  // hierarchy. In the actual call sites this is largely a no-op (the `closed` path runs after the
+  // window is destroyed; a defensive re-init holds views from a different/old window), but it
+  // keeps the teardown self-consistent for any caller where currentWindow owns these views —
+  // matching removeColumn.
+  const win = currentWindow
   for (const mv of orderedViews) {
+    if (win && !win.isDestroyed()) {
+      win.contentView.removeChildView(mv.view)
+    }
     if (!mv.view.webContents.isDestroyed()) {
       mv.view.webContents.close()
     }
