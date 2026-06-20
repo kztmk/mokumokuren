@@ -47,7 +47,7 @@ export function ColumnHeader({
         top: 0,
         width,
         height: 40,
-        background: '#111',
+        background: 'var(--header-bg)',
         border: `2px solid ${isActive ? ACTIVE_BORDER_COLOR : 'transparent'}`,
         display: 'flex',
         alignItems: 'center',
@@ -81,7 +81,7 @@ export function ColumnHeader({
           height: 20,
           borderRadius: 10,
           background: meta.badgeColor,
-          border: '1px solid #333',
+          border: '1px solid var(--chrome-border)',
           flexShrink: 0,
         }}
       />
@@ -93,7 +93,7 @@ export function ColumnHeader({
         style={{
           background: 'transparent',
           border: 'none',
-          color: canGoBack ? '#e7e9ea' : '#444',
+          color: canGoBack ? 'var(--chrome-text)' : 'var(--chrome-text-disabled)',
           cursor: canGoBack ? 'pointer' : 'default',
           fontSize: 16,
           padding: '0 2px',
@@ -114,7 +114,7 @@ export function ColumnHeader({
         style={{
           background: 'transparent',
           border: 'none',
-          color: canGoForward ? '#e7e9ea' : '#444',
+          color: canGoForward ? 'var(--chrome-text)' : 'var(--chrome-text-disabled)',
           cursor: canGoForward ? 'pointer' : 'default',
           fontSize: 16,
           padding: '0 2px',
@@ -131,7 +131,7 @@ export function ColumnHeader({
       {/* Username */}
       <span
         style={{
-          color: username ? '#e7e9ea' : '#555',
+          color: username ? 'var(--chrome-text)' : 'var(--chrome-text-muted)',
           fontSize: 12,
           flex: 1,
           overflow: 'hidden',
@@ -172,7 +172,7 @@ export function ColumnHeader({
             width: 16,
             height: 16,
             borderRadius: 8,
-            border: '1px solid #444',
+            border: '1px solid var(--chrome-border)',
             flexShrink: 0,
           }}
         />
@@ -184,7 +184,7 @@ export function ColumnHeader({
         style={{
           background: 'transparent',
           border: 'none',
-          color: '#888',
+          color: 'var(--chrome-text-muted)',
           cursor: 'pointer',
           fontSize: 14,
           padding: '0 4px',
@@ -204,7 +204,7 @@ export function ColumnHeader({
         style={{
           background: 'transparent',
           border: 'none',
-          color: '#888',
+          color: 'var(--chrome-text-muted)',
           cursor: 'pointer',
           fontSize: 14,
           padding: '0 4px',
