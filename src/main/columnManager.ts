@@ -105,26 +105,10 @@ function instantiateColumn(account: Account, atIndex?: number): ManagedView {
   return mv
 }
 
-export function initColumnManager(
-  window: BrowserWindow,
-  accounts: Account[],
-  columnHooks: ColumnHooks
-): void {
-  currentWindow = window
-  hooks = columnHooks
-  // Clear the module-level references when this window closes so the closed BrowserWindow (and the
-  // hooks chain it captures) can be GC'd. Guard on identity so a newer window that already took
-  // over isn't wiped by a late `closed` from the old one.
-  window.on('closed', () => {
-    if (currentWindow === window) {
-      currentWindow = null
-      hooks = null
-    }
-  })
-  // On macOS the window can be closed then re-created (dock click), calling this again. The
-  // module-level collections still hold the previous window's views — actively close their
-  // webContents (otherwise the orphaned pages keep running/leaking) before clearing, so we don't
-  // append to stale entries and crash when applyLayout iterates destroyed views.
+// Actively close every live view's webContents (orphaned pages would otherwise keep
+// running/leaking) and drop all references. Used both when the window closes and when a new
+// window re-initializes, so stale views never survive into a new session.
+function closeAndClearColumns(): void {
   for (const mv of orderedViews) {
     if (!mv.view.webContents.isDestroyed()) {
       mv.view.webContents.close()
@@ -132,6 +116,29 @@ export function initColumnManager(
   }
   orderedViews.length = 0
   registry.clear()
+}
+
+export function initColumnManager(
+  window: BrowserWindow,
+  accounts: Account[],
+  columnHooks: ColumnHooks
+): void {
+  currentWindow = window
+  hooks = columnHooks
+  // Tear everything down when this window closes so the views, the closed BrowserWindow, and the
+  // hooks chain it captures can all be GC'd — important on macOS where the process stays resident
+  // after the window closes. Guard on identity so a newer window that already took over isn't
+  // wiped by a late `closed` from the old one.
+  window.on('closed', () => {
+    if (currentWindow === window) {
+      closeAndClearColumns()
+      currentWindow = null
+      hooks = null
+    }
+  })
+  // Defensive: if a prior `closed` somehow didn't run before this re-init, clear any stale views
+  // so we don't append to them and crash when applyLayout iterates destroyed views.
+  closeAndClearColumns()
   for (const account of accounts) instantiateColumn(account)
   hooks.onChanged()
 }
