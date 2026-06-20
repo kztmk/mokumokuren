@@ -9,7 +9,13 @@ import {
   type MenuKey,
   type ServiceName,
 } from '../renderer/src/services'
-import { addColumn, removeColumn, reorderColumns, type ManagedView } from './columnManager'
+import {
+  addColumn,
+  removeColumn,
+  reorderColumns,
+  getOrderedViews,
+  type ManagedView,
+} from './columnManager'
 import {
   getAccounts,
   getAccountById,
@@ -96,6 +102,11 @@ type IsLoggedInFn = (wc: WebContents, service: string) => Promise<boolean | null
 export type IpcController = {
   registerView: (mv: ManagedView) => void
   unregisterView: (accountId: string) => void
+}
+
+// Modifier for the column-switch shortcuts: Cmd on macOS, Ctrl elsewhere.
+function hasColumnSwitchModifier(input: Electron.Input): boolean {
+  return process.platform === 'darwin' ? input.meta : input.control
 }
 
 // Push the full account list (visible + hidden), order-sorted, to the renderer. Called on startup
@@ -297,11 +308,36 @@ export function setupIpcHandlers(
   currentWin = win
   let activeColumnId: string | null = null
 
+  // Set the active column and notify the renderer. Shared by the IPC handler (sidebar/header
+  // clicks) and the keyboard shortcuts below.
+  const activateColumn = (columnId: string): void => {
+    if (win.isDestroyed() || !viewRegistry.has(columnId)) return
+    activeColumnId = columnId
+    win.webContents.send(CHANNELS.ACTIVE_CHANGED, activeColumnId)
+  }
+
+  // Cmd/Ctrl+1..9 select the 1st..9th column; Cmd/Ctrl+0 selects the 10th. Returns true when the
+  // input was a column-switch shortcut (so the caller can preventDefault). Handled via
+  // before-input-event on every webContents so it works regardless of which view has focus.
+  const handleColumnShortcut = (input: Electron.Input): boolean => {
+    if (input.type !== 'keyDown' || !hasColumnSwitchModifier(input)) return false
+    if (!/^[0-9]$/.test(input.key)) return false
+    const index = input.key === '0' ? 9 : Number(input.key) - 1
+    const views = getOrderedViews()
+    if (index < views.length) activateColumn(views[index].descriptor.accountId)
+    return true
+  }
+
   // ipcMain.handle is process-global; clear any prior registration first so re-invocation
   // (macOS window re-create, main-process HMR) can't throw "second handler" on register.
   for (const channel of HANDLED_CHANNELS) {
     ipcMain.removeHandler(channel)
   }
+
+  // Shortcuts pressed while the sidebar/renderer has focus.
+  win.webContents.on('before-input-event', (event, input) => {
+    if (handleColumnShortcut(input)) event.preventDefault()
+  })
 
   // Defense-in-depth: these handlers are process-global, so reject invocations whose sender
   // isn't the trusted main-window renderer (the WebContentsViews have no preload/ipcRenderer,
@@ -322,10 +358,7 @@ export function setupIpcHandlers(
 
   ipcMain.handle(CHANNELS.SET_ACTIVE_COLUMN, (event, columnId: string) => {
     if (win.isDestroyed() || event.sender !== win.webContents) return
-    if (!viewRegistry.has(columnId)) return
-
-    activeColumnId = columnId
-    win.webContents.send(CHANNELS.ACTIVE_CHANGED, activeColumnId)
+    activateColumn(columnId)
   })
 
   ipcMain.handle(CHANNELS.GO_BACK, (event, columnId: string) => {
@@ -505,6 +538,10 @@ export function setupIpcHandlers(
       if (!isMainFrame) return
       sendNavState()
       void emitAccountInfo(columnId, managedView, win, isLoggedIn)
+    })
+    // Column-switch shortcuts pressed while this view (an SNS page) has focus.
+    wc.on('before-input-event', (event, input) => {
+      if (handleColumnShortcut(input)) event.preventDefault()
     })
   }
 
