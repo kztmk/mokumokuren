@@ -543,6 +543,14 @@ export function setupIpcHandlers(
     wc.on('before-input-event', (event, input) => {
       if (handleColumnShortcut(input)) event.preventDefault()
     })
+    // Unread count: SNS pages prefix the document title with "(N)". Parse it and surface the
+    // number on the column header.
+    wc.on('page-title-updated', (_event, title) => {
+      if (win.isDestroyed()) return
+      const match = /\((\d+)\)/.exec(title)
+      const count = match ? Number(match[1]) : 0
+      win.webContents.send(CHANNELS.UNREAD_CHANGED, { columnId, count })
+    })
   }
 
   // Drop a removed column's per-column state. Its webContents is destroyed by columnManager, which

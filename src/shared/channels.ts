@@ -13,4 +13,5 @@ export const CHANNELS = {
   ACCOUNTS_CHANGED: 'accounts-changed',
   ACCOUNTS_LIST: 'accounts-list',
   ACTIVE_CHANGED: 'active-changed',
+  UNREAD_CHANGED: 'unread-changed',
 } as const

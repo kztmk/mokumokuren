@@ -19,6 +19,7 @@ function App(): React.JSX.Element {
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
   const [navStates, setNavStates] = useState<Record<string, NavState>>({})
   const [accountInfos, setAccountInfos] = useState<Record<string, AccountInfo>>({})
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({})
   // Ref (not a local var) so the once-only guard survives StrictMode unmount/remount.
   const hasSetInitialActive = useRef(false)
   // Mirror of activeColumnId readable inside the (empty-deps) IPC callbacks below, which would
@@ -68,6 +69,10 @@ function App(): React.JSX.Element {
 
       window.electronAPI.onAccountsList((list) => {
         setAccounts(list)
+      }),
+
+      window.electronAPI.onUnreadChanged((unread) => {
+        setUnreadCounts((prev) => ({ ...prev, [unread.columnId]: unread.count }))
       }),
 
       window.electronAPI.onActiveChanged((columnId) => {
@@ -193,6 +198,7 @@ function App(): React.JSX.Element {
               x={col.x}
               width={col.width}
               isActive={isActive}
+              unread={unreadCounts[col.accountId] ?? 0}
               canGoBack={navState.canGoBack}
               canGoForward={navState.canGoForward}
               onSetActive={handleSetActive}

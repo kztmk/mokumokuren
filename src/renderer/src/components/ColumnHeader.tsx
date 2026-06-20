@@ -7,6 +7,7 @@ type ColumnHeaderProps = {
   x: number
   width: number
   isActive: boolean
+  unread: number
   canGoBack: boolean
   canGoForward: boolean
   onSetActive: (columnId: string) => void
@@ -25,6 +26,7 @@ export function ColumnHeader({
   x,
   width,
   isActive,
+  unread,
   canGoBack,
   canGoForward,
   onSetActive,
@@ -140,17 +142,41 @@ export function ColumnHeader({
         {username ? `@${username}` : '未ログイン'}
       </span>
 
-      {/* Notification badge placeholder */}
-      <div
-        title="通知"
-        style={{
-          width: 16,
-          height: 16,
-          borderRadius: 8,
-          border: '1px solid #444',
-          flexShrink: 0,
-        }}
-      />
+      {/* Unread badge (parsed from the page title's "(N)") */}
+      {unread > 0 ? (
+        <div
+          title={`未読 ${unread}`}
+          style={{
+            minWidth: 16,
+            height: 16,
+            padding: '0 4px',
+            borderRadius: 8,
+            background: '#F91880',
+            color: '#fff',
+            fontSize: 10,
+            fontWeight: 'bold',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            lineHeight: 1,
+            flexShrink: 0,
+            boxSizing: 'border-box',
+          }}
+        >
+          {unread > 99 ? '99+' : unread}
+        </div>
+      ) : (
+        <div
+          title="通知"
+          style={{
+            width: 16,
+            height: 16,
+            borderRadius: 8,
+            border: '1px solid #444',
+            flexShrink: 0,
+          }}
+        />
+      )}
 
       {/* Hide button */}
       <button

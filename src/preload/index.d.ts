@@ -7,11 +7,13 @@ import type {
 } from '../renderer/src/services'
 
 type NavState = { columnId: string; canGoBack: boolean; canGoForward: boolean }
+type Unread = { columnId: string; count: number }
 type Unsubscribe = () => void
 
 interface ElectronBridgeAPI {
   onColumnLayout: (callback: (snap: ColumnLayoutSnapshot) => void) => Unsubscribe
   onAccountsList: (callback: (accounts: AccountSummary[]) => void) => Unsubscribe
+  onUnreadChanged: (callback: (unread: Unread) => void) => Unsubscribe
   onAccountsChanged: (
     callback: (info: {
       columnId: string
