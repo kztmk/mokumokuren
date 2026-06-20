@@ -454,9 +454,14 @@ export function setupIpcHandlers(
     if (win.isDestroyed()) return
 
     // Tear down the live column (no-op if the account was hidden), wipe its on-disk session, then
-    // drop it from the store and tell the renderer.
+    // drop it from the store and tell the renderer. A session-wipe failure (locked files, etc.)
+    // must not strand the account in the store, so always proceed to removeAccount.
     removeColumn(columnId)
-    await clearSessionData({ service: account.service, accountId: account.id })
+    try {
+      await clearSessionData({ service: account.service, accountId: account.id })
+    } catch (err) {
+      console.error(`Failed to clear session data for account ${columnId}:`, err)
+    }
     removeAccount(columnId)
     if (!win.isDestroyed()) broadcastAccounts(win)
   })

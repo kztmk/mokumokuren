@@ -141,7 +141,15 @@ function createWindow(): void {
   })
 
   win.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    // Only forward http(s) to the OS; never hand off file:/javascript:/custom schemes.
+    try {
+      const { protocol } = new URL(details.url)
+      if (protocol === 'http:' || protocol === 'https:') {
+        shell.openExternal(details.url)
+      }
+    } catch {
+      // invalid URL → deny
+    }
     return { action: 'deny' }
   })
 

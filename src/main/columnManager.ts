@@ -59,14 +59,19 @@ function buildManagedView(account: Account): ManagedView {
   const allowedHosts = ALLOWED_HOSTS[account.service] ?? []
   view.webContents.setWindowOpenHandler(({ url }) => {
     try {
-      const { hostname } = new URL(url)
-      if (allowedHosts.some((h) => hostname === h || hostname.endsWith('.' + h))) {
-        return { action: 'allow' }
+      const parsed = new URL(url)
+      // Only ever hand http(s) URLs to the OS. Forwarding arbitrary schemes (file:, javascript:,
+      // custom protocol handlers) to shell.openExternal is a security risk.
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        const { hostname } = parsed
+        if (allowedHosts.some((h) => hostname === h || hostname.endsWith('.' + h))) {
+          return { action: 'allow' }
+        }
+        shell.openExternal(url)
       }
     } catch {
       // invalid URL → deny
     }
-    shell.openExternal(url)
     return { action: 'deny' }
   })
 
@@ -105,6 +110,11 @@ export function initColumnManager(
 ): void {
   currentWindow = window
   hooks = columnHooks
+  // On macOS the window can be closed then re-created (dock click), calling this again. The
+  // module-level collections still hold the previous (destroyed) window's views — clear them so
+  // we don't append to stale entries and crash when applyLayout iterates destroyed views.
+  orderedViews.length = 0
+  registry.clear()
   for (const account of accounts) instantiateColumn(account)
   hooks.onChanged()
 }

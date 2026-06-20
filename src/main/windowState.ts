@@ -56,7 +56,19 @@ export function trackWindowState(win: BrowserWindow): void {
     if (win.isDestroyed() || win.isMinimized()) return
     store.set('bounds', win.getNormalBounds())
   }
-  win.on('resize', save)
-  win.on('move', save)
-  win.on('close', save)
+
+  // resize/move fire continuously while dragging; store.set writes synchronously to disk, so
+  // debounce to avoid thrashing I/O and lagging the drag. close saves immediately (final state).
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null
+  const debouncedSave = (): void => {
+    if (debounceTimer) clearTimeout(debounceTimer)
+    debounceTimer = setTimeout(save, 500)
+  }
+
+  win.on('resize', debouncedSave)
+  win.on('move', debouncedSave)
+  win.on('close', () => {
+    if (debounceTimer) clearTimeout(debounceTimer)
+    save()
+  })
 }
