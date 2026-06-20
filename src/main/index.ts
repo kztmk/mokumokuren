@@ -9,6 +9,7 @@ import { applyLayout, initLayoutManager } from './layoutManager'
 import { setupIpcHandlers } from './ipcHandlers'
 import { initColumnManager, getViewRegistry } from './columnManager'
 import { getInitialWindowBounds, trackWindowState } from './windowState'
+import { initAutoUpdate } from './autoUpdate'
 
 // Phase5: a clean install starts with no accounts; the user adds them via the sidebar "+". All
 // *visible* accounts get a column on startup (hidden ones keep their session but no view). No cap
@@ -165,7 +166,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('com.kztmk.mokumokuren')
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
@@ -176,6 +177,9 @@ app.whenReady().then(() => {
   console.log('[safeStorage] encryption available:', isEncryptionAvailable())
 
   createWindow()
+
+  // macOS only: check GitHub Releases for an update at startup (Windows updates via the Store).
+  initAutoUpdate()
 
   if (is.dev) {
     void runIsolationHarness()
