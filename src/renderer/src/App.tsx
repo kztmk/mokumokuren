@@ -7,6 +7,7 @@ import {
   type ColumnDescriptor,
   type MenuKey,
   type ServiceName,
+  type UpdateStatus,
 } from './services'
 
 const HEADER_H = 40
@@ -20,6 +21,9 @@ function App(): React.JSX.Element {
   const [navStates, setNavStates] = useState<Record<string, NavState>>({})
   const [accountInfos, setAccountInfos] = useState<Record<string, AccountInfo>>({})
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({})
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: 'idle' })
+  // In-app updates are macOS-only (Windows is managed by the Microsoft Store).
+  const updatesSupported = window.electron?.process?.platform === 'darwin'
   // Ref (not a local var) so the once-only guard survives StrictMode unmount/remount.
   const hasSetInitialActive = useRef(false)
   // Mirror of activeColumnId readable inside the (empty-deps) IPC callbacks below, which would
@@ -73,6 +77,10 @@ function App(): React.JSX.Element {
 
       window.electronAPI.onUnreadChanged((unread) => {
         setUnreadCounts((prev) => ({ ...prev, [unread.columnId]: unread.count }))
+      }),
+
+      window.electronAPI.onUpdateStatus((status) => {
+        setUpdateStatus(status)
       }),
 
       window.electronAPI.onActiveChanged((columnId) => {
@@ -147,6 +155,14 @@ function App(): React.JSX.Element {
     window.electronAPI.requestAddAccount()
   }
 
+  const handleCheckForUpdates = (): void => {
+    window.electronAPI.checkForUpdates()
+  }
+
+  const handleQuitAndInstall = (): void => {
+    window.electronAPI.quitAndInstall()
+  }
+
   const handleColumnDragStart = (columnId: string): void => {
     dragColumnIdRef.current = columnId
   }
@@ -178,6 +194,10 @@ function App(): React.JSX.Element {
         onShowColumn={handleShowColumn}
         onComposePost={handleComposePost}
         onRequestAddAccount={handleRequestAddAccount}
+        updatesSupported={updatesSupported}
+        updateStatus={updateStatus}
+        onCheckForUpdates={handleCheckForUpdates}
+        onQuitAndInstall={handleQuitAndInstall}
       />
       {columns.map((col) => {
         const isActive = col.accountId === activeColumnId

@@ -1,39 +1,76 @@
-import { dialog } from 'electron'
+import { ipcMain, type BrowserWindow } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
+import { CHANNELS } from '../shared/channels'
 
-// Startup update check for macOS, against the GitHub Releases feed configured as the publish
-// target in electron-builder.yml. Windows is distributed via the Microsoft Store, which manages
-// its own updates, so this is intentionally mac-only. Skipped in dev (no signed app / update feed).
-export function initAutoUpdate(): void {
-  if (is.dev || process.platform !== 'darwin') return
+// Update flow for macOS only — distributed via GitHub Releases (the publish target in
+// electron-builder.yml). Windows is distributed via the Microsoft Store, which manages its own
+// updates, so in-app updates are intentionally mac-only.
+export type UpdateState =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'not-available'
+  | 'error'
+  | 'unsupported'
+
+type UpdateStatus = { state: UpdateState; version?: string; percent?: number; message?: string }
+
+const supported = process.platform === 'darwin'
+
+let win: BrowserWindow | null = null
+let initialized = false
+
+function send(status: UpdateStatus): void {
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return
+  win.webContents.send(CHANNELS.UPDATE_STATUS, status)
+}
+
+// Wire IPC + autoUpdater listeners once, and run the startup check. Safe to call again on window
+// re-create (macOS): it just refreshes the window reference.
+export function setupAutoUpdate(window: BrowserWindow): void {
+  win = window
+  if (initialized) return
+  initialized = true
+
+  // Manual "check for updates" from the renderer.
+  ipcMain.handle(CHANNELS.CHECK_FOR_UPDATES, (event) => {
+    if (!win || win.isDestroyed() || event.sender !== win.webContents) return
+    // In-app updates only apply to packaged macOS builds; the Store handles Windows, and dev has
+    // no update feed.
+    if (!supported || is.dev) {
+      send({ state: 'unsupported' })
+      return
+    }
+    send({ state: 'checking' })
+    autoUpdater.checkForUpdates().catch((err) => send({ state: 'error', message: String(err) }))
+  })
+
+  // Restart now to apply a downloaded update.
+  ipcMain.handle(CHANNELS.QUIT_AND_INSTALL, (event) => {
+    if (!win || win.isDestroyed() || event.sender !== win.webContents) return
+    autoUpdater.quitAndInstall()
+  })
+
+  if (!supported || is.dev) return
 
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
 
-  autoUpdater.on('error', (err) => {
-    console.error('[autoUpdater] error:', err)
-  })
+  autoUpdater.on('checking-for-update', () => send({ state: 'checking' }))
+  autoUpdater.on('update-available', (info) => send({ state: 'available', version: info.version }))
+  autoUpdater.on('update-not-available', () => send({ state: 'not-available' }))
+  autoUpdater.on('download-progress', (p) =>
+    send({ state: 'downloading', percent: Math.round(p.percent) })
+  )
+  autoUpdater.on('update-downloaded', (info) =>
+    send({ state: 'downloaded', version: info.version })
+  )
+  autoUpdater.on('error', (err) => send({ state: 'error', message: String(err?.message ?? err) }))
 
-  // When an update has been downloaded, offer to restart now (otherwise it installs on next quit).
-  autoUpdater.on('update-downloaded', (info) => {
-    void dialog
-      .showMessageBox({
-        type: 'info',
-        buttons: ['今すぐ再起動', '後で'],
-        defaultId: 0,
-        cancelId: 1,
-        title: 'アップデート',
-        message: `新しいバージョン ${info.version} を準備しました`,
-        detail: '再起動して更新を適用しますか？（「後で」を選ぶと次回起動時に適用されます）',
-      })
-      .then(({ response }) => {
-        if (response === 0) autoUpdater.quitAndInstall()
-      })
-  })
-
-  // Check once at startup; autoDownload fetches it, then the update-downloaded handler prompts.
-  autoUpdater.checkForUpdates().catch((err) => {
-    console.error('[autoUpdater] check failed:', err)
-  })
+  // Startup check (once). autoDownload fetches it; the renderer surfaces progress and a restart
+  // action via the update status above.
+  autoUpdater.checkForUpdates().catch((err) => send({ state: 'error', message: String(err) }))
 }

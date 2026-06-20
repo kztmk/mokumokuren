@@ -124,3 +124,20 @@ export interface AccountSummary {
   isVisible: boolean
   order: number
 }
+
+export type UpdateState =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'not-available'
+  | 'error'
+  | 'unsupported'
+
+export interface UpdateStatus {
+  state: UpdateState
+  version?: string
+  percent?: number
+  message?: string
+}

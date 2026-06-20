@@ -8,6 +8,20 @@ import type {
 
 type NavState = { columnId: string; canGoBack: boolean; canGoForward: boolean }
 type Unread = { columnId: string; count: number }
+type UpdateStatus = {
+  state:
+    | 'idle'
+    | 'checking'
+    | 'available'
+    | 'downloading'
+    | 'downloaded'
+    | 'not-available'
+    | 'error'
+    | 'unsupported'
+  version?: string
+  percent?: number
+  message?: string
+}
 type Unsubscribe = () => void
 
 interface ElectronBridgeAPI {
@@ -35,6 +49,9 @@ interface ElectronBridgeAPI {
   requestAddAccount: () => void
   reorderColumns: (orderedVisibleIds: string[]) => void
   rendererReady: () => void
+  onUpdateStatus: (callback: (status: UpdateStatus) => void) => Unsubscribe
+  checkForUpdates: () => void
+  quitAndInstall: () => void
 }
 
 declare global {

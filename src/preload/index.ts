@@ -17,6 +17,20 @@ type AccountInfo = {
 }
 type NavState = { columnId: string; canGoBack: boolean; canGoForward: boolean }
 type Unread = { columnId: string; count: number }
+type UpdateStatus = {
+  state:
+    | 'idle'
+    | 'checking'
+    | 'available'
+    | 'downloading'
+    | 'downloaded'
+    | 'not-available'
+    | 'error'
+    | 'unsupported'
+  version?: string
+  percent?: number
+  message?: string
+}
 type Unsubscribe = () => void
 type BridgeAPI = {
   onColumnLayout: (callback: (snap: ColumnLayoutSnapshot) => void) => Unsubscribe
@@ -35,6 +49,9 @@ type BridgeAPI = {
   requestAddAccount: () => void
   reorderColumns: (orderedVisibleIds: string[]) => void
   rendererReady: () => void
+  onUpdateStatus: (callback: (status: UpdateStatus) => void) => Unsubscribe
+  checkForUpdates: () => void
+  quitAndInstall: () => void
 }
 
 // Custom APIs for renderer
@@ -99,6 +116,17 @@ const bridgeAPI: BridgeAPI = {
   },
   rendererReady: (): void => {
     void ipcRenderer.invoke(CHANNELS.RENDERER_READY)
+  },
+  onUpdateStatus: (callback: (status: UpdateStatus) => void): Unsubscribe => {
+    const listener = (_: unknown, status: UpdateStatus): void => callback(status)
+    ipcRenderer.on(CHANNELS.UPDATE_STATUS, listener)
+    return () => ipcRenderer.removeListener(CHANNELS.UPDATE_STATUS, listener)
+  },
+  checkForUpdates: (): void => {
+    void ipcRenderer.invoke(CHANNELS.CHECK_FOR_UPDATES)
+  },
+  quitAndInstall: (): void => {
+    void ipcRenderer.invoke(CHANNELS.QUIT_AND_INSTALL)
   },
 }
 

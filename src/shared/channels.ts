@@ -15,4 +15,7 @@ export const CHANNELS = {
   ACCOUNTS_LIST: 'accounts-list',
   ACTIVE_CHANGED: 'active-changed',
   UNREAD_CHANGED: 'unread-changed',
+  CHECK_FOR_UPDATES: 'check-for-updates',
+  QUIT_AND_INSTALL: 'quit-and-install',
+  UPDATE_STATUS: 'update-status',
 } as const
