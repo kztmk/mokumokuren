@@ -179,11 +179,11 @@ export function removeColumn(accountId: string): void {
 // accounts have no view here). Ids not present are ignored; views not named keep their relative
 // order at the end. Re-applies the layout so columns move on screen.
 export function reorderColumns(orderedIds: string[]): void {
-  const indexOf = (id: string): number => {
-    const i = orderedIds.indexOf(id)
-    return i === -1 ? orderedIds.length : i
-  }
-  orderedViews.sort((a, b) => indexOf(a.descriptor.accountId) - indexOf(b.descriptor.accountId))
+  const idToIndex = new Map(orderedIds.map((id, index) => [id, index]))
+  const orderIndex = (id: string): number => idToIndex.get(id) ?? orderedIds.length
+  orderedViews.sort(
+    (a, b) => orderIndex(a.descriptor.accountId) - orderIndex(b.descriptor.accountId)
+  )
   hooks?.onChanged()
 }
 

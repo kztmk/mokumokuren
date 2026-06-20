@@ -506,10 +506,13 @@ export function setupIpcHandlers(
     // relative order and follow. Persist sequential `order` for all accounts so the arrangement
     // survives restart, then reorder the live views to match and re-broadcast. Dedupe first so a
     // malformed payload with repeated ids can't produce duplicate/conflicting order writes.
+    const allAccounts = getAccounts()
+    const accountsById = new Map(allAccounts.map((a) => [a.id, a]))
+
     const uniqueIds = Array.from(new Set(orderedVisibleIds))
-    const validIds = uniqueIds.filter((id) => getAccountById(id)?.isVisible)
+    const validIds = uniqueIds.filter((id) => accountsById.get(id)?.isVisible)
     if (validIds.length === 0) return
-    const hidden = getAccounts()
+    const hidden = allAccounts
       .filter((a) => !validIds.includes(a.id))
       .sort((a, b) => a.order - b.order)
 
