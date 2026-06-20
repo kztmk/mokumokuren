@@ -1,38 +1,41 @@
-import type { BrowserWindow, WebContentsView } from 'electron'
-import type { ColumnDescriptor, ColumnLayoutSnapshot } from '../renderer/src/services'
+import type { BrowserWindow } from 'electron'
+import type { ColumnLayoutSnapshot } from '../renderer/src/services'
+import { getOrderedViews } from './columnManager'
 
 const SIDEBAR_W = 72
 const HEADER_H = 40
 const BORDER_W = 2 // active border inset px
 
-type ManagedView = {
-  view: WebContentsView
-  descriptor: Omit<ColumnDescriptor, 'x' | 'width' | 'height' | 'borderW'>
-}
-
 let currentWindow: BrowserWindow | null = null
-let managedViews: ManagedView[] = []
 let snapshot: ColumnLayoutSnapshot = {
   columns: [],
   sidebarW: SIDEBAR_W,
   headerH: HEADER_H,
 }
 
-export function initLayoutManager(win: BrowserWindow, views: ManagedView[]): void {
+export function initLayoutManager(win: BrowserWindow): void {
   currentWindow = win
-  managedViews = views
-
-  applyLayout()
   win.on('resize', () => applyLayout())
 }
 
 export function applyLayout(): void {
-  if (!currentWindow) return
+  if (!currentWindow || currentWindow.isDestroyed()) return
+
+  const managedViews = getOrderedViews()
+  const columnCount = managedViews.length
+
+  // No columns: publish an empty snapshot so the renderer can clear its layout (e.g. after the
+  // last column is hidden/removed). The early `return` of the previous design left the renderer
+  // showing stale columns.
+  if (columnCount === 0) {
+    snapshot = { columns: [], sidebarW: SIDEBAR_W, headerH: HEADER_H }
+    if (!currentWindow.webContents.isDestroyed()) {
+      currentWindow.webContents.send('column-layout', snapshot)
+    }
+    return
+  }
 
   const [winContentWidth, winContentHeight] = currentWindow.getContentSize()
-  const columnCount = managedViews.length
-  if (columnCount === 0) return
-
   const colW = Math.max(320, Math.floor((winContentWidth - SIDEBAR_W) / columnCount))
   const height = Math.max(0, winContentHeight - HEADER_H)
 
@@ -60,7 +63,9 @@ export function applyLayout(): void {
     headerH: HEADER_H,
   }
 
-  currentWindow.webContents.send('column-layout', snapshot)
+  if (!currentWindow.webContents.isDestroyed()) {
+    currentWindow.webContents.send('column-layout', snapshot)
+  }
 }
 
 export function getSnapshot(): ColumnLayoutSnapshot {

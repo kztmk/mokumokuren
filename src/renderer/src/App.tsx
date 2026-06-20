@@ -3,6 +3,7 @@ import { Sidebar } from './components/Sidebar'
 import { ColumnHeader } from './components/ColumnHeader'
 import {
   ACTIVE_BORDER_COLOR,
+  type AccountSummary,
   type ColumnDescriptor,
   type MenuKey,
   type ServiceName,
@@ -14,14 +15,18 @@ type AccountInfo = { username: string | null; avatarUrl: string | null; loggedIn
 
 function App(): React.JSX.Element {
   const [columns, setColumns] = useState<ColumnDescriptor[]>([])
+  const [accounts, setAccounts] = useState<AccountSummary[]>([])
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
   const [navStates, setNavStates] = useState<Record<string, NavState>>({})
   const [accountInfos, setAccountInfos] = useState<Record<string, AccountInfo>>({})
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({})
   // Ref (not a local var) so the once-only guard survives StrictMode unmount/remount.
   const hasSetInitialActive = useRef(false)
   // Mirror of activeColumnId readable inside the (empty-deps) IPC callbacks below, which would
   // otherwise close over the stale initial value.
   const activeColumnIdRef = useRef<string | null>(null)
+  // accountId currently being dragged for column reordering.
+  const dragColumnIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     // Set the initial active column exactly once, outside any state updater, so the IPC
@@ -62,6 +67,14 @@ function App(): React.JSX.Element {
         }
       }),
 
+      window.electronAPI.onAccountsList((list) => {
+        setAccounts(list)
+      }),
+
+      window.electronAPI.onUnreadChanged((unread) => {
+        setUnreadCounts((prev) => ({ ...prev, [unread.columnId]: unread.count }))
+      }),
+
       window.electronAPI.onActiveChanged((columnId) => {
         setActive(columnId)
       }),
@@ -88,6 +101,11 @@ function App(): React.JSX.Element {
       }),
     ]
 
+    // Listeners are now registered — tell main to push the initial layout + account list. Doing
+    // this here (rather than relying on the page-load event) avoids dropping the initial state if
+    // the broadcast would otherwise beat listener registration.
+    window.electronAPI.rendererReady()
+
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
   }, [])
 
@@ -107,12 +125,17 @@ function App(): React.JSX.Element {
     window.electronAPI.goForward(columnId)
   }
 
-  const handleClose = (): void => {
-    // Phase4: window.electronAPI.closeColumn(columnId)
+  const handleClose = (columnId: string): void => {
+    // Account deletion (main shows a confirm dialog, then wipes the session + removes the account).
+    window.electronAPI.closeColumn(columnId)
   }
 
-  const handleSetVisible = (): void => {
-    // Phase4: window.electronAPI.setColumnVisible(columnId, visible)
+  const handleSetVisible = (columnId: string, visible: boolean): void => {
+    window.electronAPI.setColumnVisible(columnId, visible)
+  }
+
+  const handleShowColumn = (columnId: string): void => {
+    window.electronAPI.setColumnVisible(columnId, true)
   }
 
   const handleComposePost = (service: ServiceName): void => {
@@ -120,17 +143,39 @@ function App(): React.JSX.Element {
   }
 
   const handleRequestAddAccount = (): void => {
-    // Phase4: window.electronAPI.requestAddAccount(service)
+    // Main shows a service-picker dialog, then creates the account + column.
+    window.electronAPI.requestAddAccount()
+  }
+
+  const handleColumnDragStart = (columnId: string): void => {
+    dragColumnIdRef.current = columnId
+  }
+
+  const handleColumnDrop = (targetColumnId: string): void => {
+    const sourceId = dragColumnIdRef.current
+    dragColumnIdRef.current = null
+    if (!sourceId || sourceId === targetColumnId) return
+
+    const ids = columns.map((c) => c.accountId)
+    const from = ids.indexOf(sourceId)
+    const to = ids.indexOf(targetColumnId)
+    if (from === -1 || to === -1) return
+
+    ids.splice(from, 1)
+    ids.splice(to, 0, sourceId)
+    window.electronAPI.reorderColumns(ids)
   }
 
   return (
     <>
       <Sidebar
         columns={columns}
+        accounts={accounts}
         activeColumnId={activeColumnId}
         accountInfos={accountInfos}
         onNavigate={handleNavigate}
         onSetActive={handleSetActive}
+        onShowColumn={handleShowColumn}
         onComposePost={handleComposePost}
         onRequestAddAccount={handleRequestAddAccount}
       />
@@ -158,6 +203,7 @@ function App(): React.JSX.Element {
               x={col.x}
               width={col.width}
               isActive={isActive}
+              unread={unreadCounts[col.accountId] ?? 0}
               canGoBack={navState.canGoBack}
               canGoForward={navState.canGoForward}
               onSetActive={handleSetActive}
@@ -165,6 +211,8 @@ function App(): React.JSX.Element {
               onSetVisible={handleSetVisible}
               onGoBack={handleGoBack}
               onGoForward={handleGoForward}
+              onDragStartColumn={handleColumnDragStart}
+              onDropColumn={handleColumnDrop}
             />
           </div>
         )

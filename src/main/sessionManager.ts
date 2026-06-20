@@ -15,6 +15,14 @@ export function getOrCreateSession({ service, accountId }: AccountKey): Electron
   return session.fromPartition(getPartitionKey({ service, accountId }))
 }
 
+// Wipe all persisted data (cookies, localStorage, IndexedDB, cache, …) for an account's session.
+// Used when deleting an account so no login state lingers on disk.
+export async function clearSessionData(key: AccountKey): Promise<void> {
+  const ses = getOrCreateSession(key)
+  await ses.clearStorageData()
+  await ses.clearCache()
+}
+
 export function buildChromeUA(): string {
   const chromeVersion = process.versions.chrome
   return `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`

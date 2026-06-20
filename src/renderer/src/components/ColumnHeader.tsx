@@ -7,6 +7,7 @@ type ColumnHeaderProps = {
   x: number
   width: number
   isActive: boolean
+  unread: number
   canGoBack: boolean
   canGoForward: boolean
   onSetActive: (columnId: string) => void
@@ -14,6 +15,8 @@ type ColumnHeaderProps = {
   onSetVisible: (columnId: string, visible: boolean) => void
   onGoBack: (columnId: string) => void
   onGoForward: (columnId: string) => void
+  onDragStartColumn: (columnId: string) => void
+  onDropColumn: (columnId: string) => void
 }
 
 export function ColumnHeader({
@@ -23,6 +26,7 @@ export function ColumnHeader({
   x,
   width,
   isActive,
+  unread,
   canGoBack,
   canGoForward,
   onSetActive,
@@ -30,6 +34,8 @@ export function ColumnHeader({
   onSetVisible,
   onGoBack,
   onGoForward,
+  onDragStartColumn,
+  onDropColumn,
 }: ColumnHeaderProps): React.JSX.Element {
   const meta = SERVICE_META[service]
 
@@ -41,7 +47,7 @@ export function ColumnHeader({
         top: 0,
         width,
         height: 40,
-        background: '#111',
+        background: 'var(--header-bg)',
         border: `2px solid ${isActive ? ACTIVE_BORDER_COLOR : 'transparent'}`,
         display: 'flex',
         alignItems: 'center',
@@ -52,6 +58,20 @@ export function ColumnHeader({
         boxSizing: 'border-box',
       }}
       onClick={() => onSetActive(columnId)}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = 'move'
+        onDragStartColumn(columnId)
+      }}
+      onDragOver={(e) => {
+        // Required for the drop to fire; marks this header as a valid drop target.
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+      }}
+      onDrop={(e) => {
+        e.preventDefault()
+        onDropColumn(columnId)
+      }}
     >
       {/* Service badge */}
       <div
@@ -61,7 +81,7 @@ export function ColumnHeader({
           height: 20,
           borderRadius: 10,
           background: meta.badgeColor,
-          border: '1px solid #333',
+          border: '1px solid var(--chrome-border)',
           flexShrink: 0,
         }}
       />
@@ -73,7 +93,7 @@ export function ColumnHeader({
         style={{
           background: 'transparent',
           border: 'none',
-          color: canGoBack ? '#e7e9ea' : '#444',
+          color: canGoBack ? 'var(--chrome-text)' : 'var(--chrome-text-disabled)',
           cursor: canGoBack ? 'pointer' : 'default',
           fontSize: 16,
           padding: '0 2px',
@@ -94,7 +114,7 @@ export function ColumnHeader({
         style={{
           background: 'transparent',
           border: 'none',
-          color: canGoForward ? '#e7e9ea' : '#444',
+          color: canGoForward ? 'var(--chrome-text)' : 'var(--chrome-text-disabled)',
           cursor: canGoForward ? 'pointer' : 'default',
           fontSize: 16,
           padding: '0 2px',
@@ -111,7 +131,7 @@ export function ColumnHeader({
       {/* Username */}
       <span
         style={{
-          color: username ? '#e7e9ea' : '#555',
+          color: username ? 'var(--chrome-text)' : 'var(--chrome-text-muted)',
           fontSize: 12,
           flex: 1,
           overflow: 'hidden',
@@ -122,17 +142,41 @@ export function ColumnHeader({
         {username ? `@${username}` : '未ログイン'}
       </span>
 
-      {/* Notification badge placeholder */}
-      <div
-        title="通知"
-        style={{
-          width: 16,
-          height: 16,
-          borderRadius: 8,
-          border: '1px solid #444',
-          flexShrink: 0,
-        }}
-      />
+      {/* Unread badge (parsed from the page title's "(N)") */}
+      {unread > 0 ? (
+        <div
+          title={`未読 ${unread}`}
+          style={{
+            minWidth: 16,
+            height: 16,
+            padding: '0 4px',
+            borderRadius: 8,
+            background: '#F91880',
+            color: '#fff',
+            fontSize: 10,
+            fontWeight: 'bold',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            lineHeight: 1,
+            flexShrink: 0,
+            boxSizing: 'border-box',
+          }}
+        >
+          {unread > 99 ? '99+' : unread}
+        </div>
+      ) : (
+        <div
+          title="通知"
+          style={{
+            width: 16,
+            height: 16,
+            borderRadius: 8,
+            border: '1px solid var(--chrome-border)',
+            flexShrink: 0,
+          }}
+        />
+      )}
 
       {/* Hide button */}
       <button
@@ -140,7 +184,7 @@ export function ColumnHeader({
         style={{
           background: 'transparent',
           border: 'none',
-          color: '#888',
+          color: 'var(--chrome-text-muted)',
           cursor: 'pointer',
           fontSize: 14,
           padding: '0 4px',
@@ -154,13 +198,13 @@ export function ColumnHeader({
         −
       </button>
 
-      {/* Close button */}
+      {/* Delete account button */}
       <button
-        title="閉じる"
+        title="アカウントを削除"
         style={{
           background: 'transparent',
           border: 'none',
-          color: '#888',
+          color: 'var(--chrome-text-muted)',
           cursor: 'pointer',
           fontSize: 14,
           padding: '0 4px',

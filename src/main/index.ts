@@ -1,65 +1,22 @@
-import {
-  app,
-  shell,
-  BrowserWindow,
-  ipcMain,
-  WebContentsView,
-  type Session,
-  type WebContents,
-} from 'electron'
+import { app, shell, BrowserWindow, ipcMain, type Session, type WebContents } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { getOrCreateSession, applyUAToSession, type ServiceName } from './sessionManager'
-import { addAccount, getAccounts, type Account } from './accountStore'
+import { getAccounts, type Account } from './accountStore'
 import { isEncryptionAvailable } from './safeStorageWrapper'
 import { runIsolationHarness } from './isolationHarness'
 import { applyLayout, initLayoutManager } from './layoutManager'
 import { setupIpcHandlers } from './ipcHandlers'
-import { SNS_URLS } from '../renderer/src/services'
+import { initColumnManager, getViewRegistry } from './columnManager'
+import { getInitialWindowBounds, trackWindowState } from './windowState'
 
-const ALLOWED_HOSTS: Record<ServiceName, string[]> = {
-  x: ['x.com', 'twitter.com'],
-  bluesky: ['bsky.app', 'bsky.social'],
-  threads: ['threads.net', 'instagram.com'],
-}
-
-const PROTOTYPE_ACCOUNTS: Parameters<typeof addAccount>[0][] = [
-  {
-    service: 'x',
-    displayName: 'X Proto',
-    username: 'proto',
-    avatarUrl: '',
-    order: 0,
-    isVisible: true,
-  },
-  {
-    service: 'bluesky',
-    displayName: 'Bluesky Proto',
-    username: 'proto',
-    avatarUrl: '',
-    order: 1,
-    isVisible: true,
-  },
-  {
-    service: 'threads',
-    displayName: 'Threads Proto',
-    username: 'proto',
-    avatarUrl: '',
-    order: 2,
-    isVisible: true,
-  },
-]
-
+// Phase5: a clean install starts with no accounts; the user adds them via the sidebar "+". All
+// *visible* accounts get a column on startup (hidden ones keep their session but no view). No cap
+// here — the user controls how many columns are shown via the hide toggle.
 function getStartupAccounts(): Account[] {
-  const accounts = getAccounts()
-  const startupAccounts =
-    accounts.length > 0 ? accounts : PROTOTYPE_ACCOUNTS.map((account) => addAccount(account))
-
-  return startupAccounts
+  return getAccounts()
     .filter((account) => account.isVisible)
     .sort((a, b) => a.order - b.order)
-    .slice(0, 3)
 }
 
 // Auth detection differs per service:
@@ -156,8 +113,9 @@ async function isLoggedIn(wc: WebContents, service: string): Promise<boolean | n
 
 function createWindow(): void {
   const win = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    ...getInitialWindowBounds(),
+    minWidth: 480,
+    minHeight: 400,
     show: false,
     autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
@@ -166,52 +124,16 @@ function createWindow(): void {
       sandbox: false,
     },
   })
+  trackWindowState(win)
 
-  const views = getStartupAccounts().map((account) => {
-    const ses = getOrCreateSession({ service: account.service, accountId: account.id })
-    applyUAToSession(ses)
-    const view = new WebContentsView({
-      webPreferences: {
-        session: ses,
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-        allowRunningInsecureContent: false,
-      },
-    })
-    win.contentView.addChildView(view)
-    const allowedHosts = ALLOWED_HOSTS[account.service] ?? []
-    view.webContents.setWindowOpenHandler(({ url }) => {
-      try {
-        const { hostname } = new URL(url)
-        if (allowedHosts.some((h) => hostname === h || hostname.endsWith('.' + h))) {
-          return { action: 'allow' }
-        }
-      } catch {
-        // invalid URL → deny
-      }
-      shell.openExternal(url)
-      return { action: 'deny' }
-    })
-    return {
-      view,
-      descriptor: {
-        accountId: account.id,
-        service: account.service,
-        username: account.username,
-      },
-    }
-  })
-
-  const viewRegistry = new Map(
-    views.map((managedView) => [managedView.descriptor.accountId, managedView])
-  )
-  setupIpcHandlers(viewRegistry, win, isLoggedIn)
-  initLayoutManager(win, views)
-  views.forEach((managedView) => {
-    managedView.view.webContents.loadURL(SNS_URLS[managedView.descriptor.service]).catch((err) => {
-      console.error(`Failed to load startup URL for ${managedView.descriptor.service}:`, err)
-    })
+  // setupIpcHandlers holds the (initially empty) registry reference and returns hooks so
+  // columnManager can attach/detach a column's IPC listeners as views come and go at runtime.
+  const ipc = setupIpcHandlers(getViewRegistry(), win, isLoggedIn)
+  initLayoutManager(win)
+  initColumnManager(win, getStartupAccounts(), {
+    onViewAdded: ipc.registerView,
+    onViewRemoved: ipc.unregisterView,
+    onChanged: applyLayout,
   })
 
   win.on('ready-to-show', () => {
@@ -219,7 +141,17 @@ function createWindow(): void {
   })
 
   win.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    // Only forward http(s) to the OS; never hand off file:/javascript:/custom schemes.
+    try {
+      const { protocol } = new URL(details.url)
+      if (protocol === 'http:' || protocol === 'https:') {
+        shell.openExternal(details.url).catch((err) => {
+          console.error(`Failed to open external URL: ${details.url}`, err)
+        })
+      }
+    } catch {
+      // invalid URL → deny
+    }
     return { action: 'deny' }
   })
 
@@ -228,7 +160,8 @@ function createWindow(): void {
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'))
   }
-  win.webContents.on('did-finish-load', () => applyLayout())
+  // Initial layout + account list are pushed in response to the renderer's RENDERER_READY signal
+  // (see setupIpcHandlers), so they can't be dropped before the renderer registers its listeners.
 }
 
 app.whenReady().then(() => {

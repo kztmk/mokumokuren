@@ -1,7 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { CHANNELS } from '../shared/channels'
-import type { ColumnLayoutSnapshot, MenuKey, ServiceName } from '../renderer/src/services'
+import type {
+  AccountSummary,
+  ColumnLayoutSnapshot,
+  MenuKey,
+  ServiceName,
+} from '../renderer/src/services'
 
 type AccountInfo = {
   columnId: string
@@ -11,10 +16,13 @@ type AccountInfo = {
   loggedIn: boolean
 }
 type NavState = { columnId: string; canGoBack: boolean; canGoForward: boolean }
+type Unread = { columnId: string; count: number }
 type Unsubscribe = () => void
 type BridgeAPI = {
   onColumnLayout: (callback: (snap: ColumnLayoutSnapshot) => void) => Unsubscribe
+  onAccountsList: (callback: (accounts: AccountSummary[]) => void) => Unsubscribe
   onAccountsChanged: (callback: (info: AccountInfo) => void) => Unsubscribe
+  onUnreadChanged: (callback: (unread: Unread) => void) => Unsubscribe
   navigate: (columnId: string, menuKey: MenuKey) => void
   setActiveColumn: (columnId: string) => void
   setColumnVisible: (columnId: string, visible: boolean) => void
@@ -24,7 +32,9 @@ type BridgeAPI = {
   onActiveChanged: (callback: (columnId: string) => void) => Unsubscribe
   closeColumn: (columnId: string) => void
   composePost: (service: ServiceName) => void
-  requestAddAccount: (service: ServiceName) => void
+  requestAddAccount: () => void
+  reorderColumns: (orderedVisibleIds: string[]) => void
+  rendererReady: () => void
 }
 
 // Custom APIs for renderer
@@ -35,10 +45,20 @@ const bridgeAPI: BridgeAPI = {
     ipcRenderer.on(CHANNELS.COLUMN_LAYOUT, listener)
     return () => ipcRenderer.removeListener(CHANNELS.COLUMN_LAYOUT, listener)
   },
+  onAccountsList: (callback: (accounts: AccountSummary[]) => void): Unsubscribe => {
+    const listener = (_: unknown, accounts: AccountSummary[]): void => callback(accounts)
+    ipcRenderer.on(CHANNELS.ACCOUNTS_LIST, listener)
+    return () => ipcRenderer.removeListener(CHANNELS.ACCOUNTS_LIST, listener)
+  },
   onAccountsChanged: (callback: (info: AccountInfo) => void): Unsubscribe => {
     const listener = (_: unknown, info: AccountInfo): void => callback(info)
     ipcRenderer.on(CHANNELS.ACCOUNTS_CHANGED, listener)
     return () => ipcRenderer.removeListener(CHANNELS.ACCOUNTS_CHANGED, listener)
+  },
+  onUnreadChanged: (callback: (unread: Unread) => void): Unsubscribe => {
+    const listener = (_: unknown, unread: Unread): void => callback(unread)
+    ipcRenderer.on(CHANNELS.UNREAD_CHANGED, listener)
+    return () => ipcRenderer.removeListener(CHANNELS.UNREAD_CHANGED, listener)
   },
   navigate: (columnId: string, menuKey: MenuKey): void => {
     void ipcRenderer.invoke(CHANNELS.NAVIGATE, columnId, menuKey)
@@ -71,8 +91,14 @@ const bridgeAPI: BridgeAPI = {
   composePost: (service: ServiceName): void => {
     void ipcRenderer.invoke(CHANNELS.COMPOSE_POST, service)
   },
-  requestAddAccount: (service: ServiceName): void => {
-    void ipcRenderer.invoke(CHANNELS.REQUEST_ADD_ACCOUNT, service)
+  requestAddAccount: (): void => {
+    void ipcRenderer.invoke(CHANNELS.REQUEST_ADD_ACCOUNT)
+  },
+  reorderColumns: (orderedVisibleIds: string[]): void => {
+    void ipcRenderer.invoke(CHANNELS.REORDER_COLUMNS, orderedVisibleIds)
+  },
+  rendererReady: (): void => {
+    void ipcRenderer.invoke(CHANNELS.RENDERER_READY)
   },
 }
 

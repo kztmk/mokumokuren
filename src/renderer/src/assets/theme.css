@@ -1,0 +1,34 @@
+/*
+ * App chrome theme (sidebar, column headers, account icons). Follows the OS color scheme.
+ * The SNS WebContentsViews theme themselves via Electron's default nativeTheme ('system').
+ * Brand/accent colors (service badges, post button, active border, unread, login ✓) are kept
+ * fixed and live in the components.
+ */
+:root {
+  color-scheme: light dark;
+
+  /* Light (default) */
+  --app-bg: #ffffff;
+  --sidebar-bg: #ffffff;
+  --header-bg: #f7f9f9;
+  --chrome-text: #0f1419;
+  --chrome-text-muted: #536471;
+  --chrome-text-disabled: #aab8c2;
+  --chrome-border: #cfd9de;
+  --icon-empty-bg: #e1e8ed;
+  --icon-empty-text: #8899a6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --app-bg: #000000;
+    --sidebar-bg: #000000;
+    --header-bg: #111111;
+    --chrome-text: #e7e9ea;
+    --chrome-text-muted: #8b98a5;
+    --chrome-text-disabled: #444444;
+    --chrome-border: #333333;
+    --icon-empty-bg: #1f1f1f;
+    --icon-empty-text: #5a5a5a;
+  }
+}
