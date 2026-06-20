@@ -1,5 +1,6 @@
 import {
   ACTIVE_BORDER_COLOR,
+  type AccountSummary,
   type ColumnDescriptor,
   type MenuKey,
   type ServiceName,
@@ -32,20 +33,24 @@ type AccountInfo = { username: string | null; avatarUrl: string | null; loggedIn
 
 type SidebarProps = {
   columns: ColumnDescriptor[]
+  accounts: AccountSummary[]
   activeColumnId: string | null
   accountInfos: Record<string, AccountInfo>
   onNavigate: (columnId: string, menuKey: MenuKey) => void
   onSetActive: (columnId: string) => void
+  onShowColumn: (columnId: string) => void
   onComposePost: (service: ServiceName) => void
-  onRequestAddAccount: (service: ServiceName) => void
+  onRequestAddAccount: () => void
 }
 
 export function Sidebar({
   columns,
+  accounts,
   activeColumnId,
   accountInfos,
   onNavigate,
   onSetActive,
+  onShowColumn,
   onComposePost,
   onRequestAddAccount,
 }: SidebarProps): React.JSX.Element {
@@ -66,7 +71,7 @@ export function Sidebar({
         top: 0,
         width: 72,
         height: '100vh',
-        background: '#000',
+        background: 'var(--sidebar-bg)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -74,8 +79,17 @@ export function Sidebar({
         boxSizing: 'border-box',
       }}
     >
-      {/* Navigation items */}
-      <nav style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 0', flex: 1 }}>
+      {/* Navigation items. grow to push the account list toward the bottom, but never shrink
+          (flexShrink:0) so the nav icons aren't clipped when the account list overflows. */}
+      <nav
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 4,
+          padding: '8px 0',
+          flex: '1 0 auto',
+        }}
+      >
         {activeService !== null &&
           NAV_KEYS.map((key) => {
             const disabled = isMenuDisabled(activeService, key, activeUsername)
@@ -91,7 +105,7 @@ export function Sidebar({
                   borderRadius: 24,
                   border: 'none',
                   background: 'transparent',
-                  color: disabled ? '#444' : '#e7e9ea',
+                  color: disabled ? 'var(--chrome-text-disabled)' : 'var(--chrome-text)',
                   cursor: disabled ? 'not-allowed' : 'pointer',
                   fontSize: 20,
                   display: 'flex',
@@ -109,7 +123,7 @@ export function Sidebar({
           })}
       </nav>
 
-      {/* Account icon list (max 10) */}
+      {/* Account icon list — scrolls vertically when there are more accounts than fit. */}
       <div
         style={{
           display: 'flex',
@@ -117,25 +131,91 @@ export function Sidebar({
           alignItems: 'center',
           gap: 8,
           paddingBottom: 8,
+          minHeight: 0,
+          overflowY: 'auto',
         }}
       >
-        {columns.slice(0, 10).map((col) => {
-          const isActive = col.accountId === activeColumnId
-          const info = accountInfos[col.accountId]
-          const effectiveUsername = info?.username ?? col.username
+        {accounts.map((acc) => {
+          const badgeColor = SERVICE_META[acc.service].badgeColor
+
+          // Hidden account: session preserved but no live column. Render a dimmed, dashed icon
+          // that re-shows the column on click (rather than activating it).
+          if (!acc.isVisible) {
+            return (
+              <div
+                key={acc.id}
+                title={`${acc.displayName || acc.service}（非表示 — クリックで表示）`}
+                onClick={() => onShowColumn(acc.id)}
+                style={{
+                  position: 'relative',
+                  width: 36,
+                  height: 36,
+                  borderRadius: 18,
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                <div
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    borderRadius: 18,
+                    background: 'var(--icon-empty-bg)',
+                    color: 'var(--icon-empty-text)',
+                    fontSize: 11,
+                    fontWeight: 'bold',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxSizing: 'border-box',
+                    overflow: 'hidden',
+                    opacity: 0.4,
+                    filter: 'grayscale(100%)',
+                    border: '1px dashed var(--chrome-border)',
+                  }}
+                >
+                  {acc.service[0].toUpperCase()}
+                </div>
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: -2,
+                    right: -2,
+                    width: 16,
+                    height: 16,
+                    borderRadius: 8,
+                    background: 'var(--chrome-border)',
+                    border: '2px solid var(--sidebar-bg)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--chrome-text-muted)',
+                    fontSize: 9,
+                    fontWeight: 'bold',
+                    lineHeight: 1,
+                  }}
+                >
+                  ▸
+                </div>
+              </div>
+            )
+          }
+
+          const isActive = acc.id === activeColumnId
+          const info = accountInfos[acc.id]
+          const effectiveUsername = info?.username ?? acc.username
           // Before the first account-info update arrives, fall back to the persisted login
           // state (a real username, not the startup 'proto' placeholder) so accounts don't
           // briefly flash logged-out on startup.
-          const loggedIn = info?.loggedIn ?? (col.username !== null && col.username !== 'proto')
+          const loggedIn = info?.loggedIn ?? (acc.username !== null && acc.username !== 'proto')
           const avatarUrl = info?.avatarUrl ?? null
-          const badgeColor = SERVICE_META[col.service].badgeColor
           return (
             <div
-              key={col.accountId}
+              key={acc.id}
               title={
                 loggedIn && effectiveUsername
-                  ? `@${effectiveUsername} (${col.service})`
-                  : `未ログイン (${col.service})`
+                  ? `@${effectiveUsername} (${acc.service})`
+                  : `未ログイン (${acc.service})`
               }
               style={{
                 position: 'relative',
@@ -149,7 +229,7 @@ export function Sidebar({
                   : 'none',
               }}
               onClick={() => {
-                onSetActive(col.accountId)
+                onSetActive(acc.id)
               }}
             >
               <div
@@ -157,8 +237,8 @@ export function Sidebar({
                   width: '100%',
                   height: '100%',
                   borderRadius: 18,
-                  background: loggedIn ? badgeColor : '#1f1f1f',
-                  color: loggedIn ? '#fff' : '#5a5a5a',
+                  background: loggedIn ? badgeColor : 'var(--icon-empty-bg)',
+                  color: loggedIn ? '#fff' : 'var(--icon-empty-text)',
                   fontSize: 11,
                   fontWeight: 'bold',
                   display: 'flex',
@@ -173,7 +253,7 @@ export function Sidebar({
                     !isActive && loggedIn ? 'inset 0 0 0 1px rgba(255,255,255,0.18)' : 'none',
                 }}
               >
-                {col.service[0].toUpperCase()}
+                {acc.service[0].toUpperCase()}
                 {avatarUrl && (
                   <img
                     key={avatarUrl}
@@ -202,7 +282,7 @@ export function Sidebar({
                     height: 16,
                     borderRadius: 8,
                     background: '#00BA7C',
-                    border: '2px solid #000',
+                    border: '2px solid var(--sidebar-bg)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -226,9 +306,9 @@ export function Sidebar({
             width: 36,
             height: 36,
             borderRadius: 18,
-            border: '2px solid #333',
+            border: '2px solid var(--chrome-border)',
             background: 'transparent',
-            color: '#e7e9ea',
+            color: 'var(--chrome-text)',
             cursor: 'pointer',
             fontSize: 20,
             display: 'flex',
@@ -236,8 +316,8 @@ export function Sidebar({
             justifyContent: 'center',
           }}
           onClick={() => {
-            // Phase4: requestAddAccount stub
-            if (activeService !== null) onRequestAddAccount(activeService)
+            // Always available — main shows the service picker (works even with no accounts yet).
+            onRequestAddAccount()
           }}
         >
           +

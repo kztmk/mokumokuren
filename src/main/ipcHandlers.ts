@@ -1,13 +1,31 @@
-import { ipcMain, type BrowserWindow, type WebContentsView, type WebContents } from 'electron'
+import { ipcMain, dialog, type BrowserWindow, type WebContents } from 'electron'
 import { CHANNELS } from '../shared/channels'
 import {
   COMPOSE_URL,
   NAV_MAP,
   POST_TRIGGER,
+  SERVICE_META,
   SNS_URLS,
   type MenuKey,
   type ServiceName,
 } from '../renderer/src/services'
+import {
+  addColumn,
+  removeColumn,
+  reorderColumns,
+  getOrderedViews,
+  type ManagedView,
+} from './columnManager'
+import {
+  getAccounts,
+  getAccountById,
+  addAccount,
+  updateAccount,
+  updateAccountsOrder,
+  removeAccount,
+} from './accountStore'
+import { clearSessionData } from './sessionManager'
+import { applyLayout } from './layoutManager'
 
 // Extracts the account HANDLE (not the display name): it feeds buildNavigationUrl's
 // `:username` substitution, so it must be the URL handle. Sourced from the logged-in user's
@@ -47,7 +65,8 @@ const AVATAR_URL_SELECTOR: Record<ServiceName, string> = {
 const SERVICE_HOSTS: Record<ServiceName, string[]> = {
   x: ['x.com', 'twitter.com'],
   bluesky: ['bsky.app', 'bsky.social'],
-  threads: ['threads.net', 'instagram.com'],
+  // Threads migrated its primary domain to threads.com; keep threads.net for the redirect/legacy.
+  threads: ['threads.net', 'threads.com', 'instagram.com'],
 }
 
 function isOnServiceDomain(wc: WebContents, service: ServiceName): boolean {
@@ -74,20 +93,42 @@ const HANDLE_PATTERN: Record<ServiceName, RegExp> = {
   threads: /^(?=[a-zA-Z0-9._]{1,30}$)[a-zA-Z0-9_]+([.][a-zA-Z0-9_]+)*$/,
 }
 
-type ManagedView = {
-  view: WebContentsView
-  descriptor: {
-    accountId: string
-    service: ServiceName
-    username: string | null
-  }
-}
-
 type ViewRegistry = Map<string, ManagedView>
 
 // Tri-state: true / false / null. null means "indeterminate" (e.g. the Threads SPA shell hasn't
 // rendered yet) — emitAccountInfo skips emitting so the last known state holds.
 type IsLoggedInFn = (wc: WebContents, service: string) => Promise<boolean | null>
+
+// Returned by setupIpcHandlers so columnManager can wire/teardown a column's listeners and caches
+// when views are added or removed at runtime.
+export type IpcController = {
+  registerView: (mv: ManagedView) => void
+  unregisterView: (accountId: string) => void
+}
+
+// Modifier for the column-switch shortcuts: Cmd on macOS, Ctrl elsewhere.
+function hasColumnSwitchModifier(input: Electron.Input): boolean {
+  return process.platform === 'darwin' ? input.meta : input.control
+}
+
+// Push the full account list (visible + hidden), order-sorted, to the renderer. Called on startup
+// and after any account mutation (visibility toggle, and — later phases — add/delete/reorder) so
+// the sidebar can render hidden accounts and offer them for re-showing.
+export function broadcastAccounts(win: BrowserWindow): void {
+  if (win.isDestroyed() || win.webContents.isDestroyed()) return
+  const summaries = getAccounts()
+    .slice()
+    .sort((a, b) => a.order - b.order)
+    .map((a) => ({
+      id: a.id,
+      service: a.service,
+      displayName: a.displayName,
+      username: a.username,
+      isVisible: a.isVisible,
+      order: a.order,
+    }))
+  win.webContents.send(CHANNELS.ACCOUNTS_LIST, summaries)
+}
 
 // Last successfully scraped profile per column. Username/avatar selectors only resolve on
 // certain pages, so we fall back to the cached value while still logged in instead of
@@ -221,6 +262,8 @@ const HANDLED_CHANNELS = [
   CHANNELS.SET_COLUMN_VISIBLE,
   CHANNELS.CLOSE_COLUMN,
   CHANNELS.REQUEST_ADD_ACCOUNT,
+  CHANNELS.REORDER_COLUMNS,
+  CHANNELS.RENDERER_READY,
 ]
 
 function buildNavigationUrl(view: ManagedView, menuKey: MenuKey): string | null {
@@ -253,7 +296,7 @@ export function setupIpcHandlers(
   viewRegistry: ViewRegistry,
   win: BrowserWindow,
   isLoggedIn: IsLoggedInFn
-): void {
+): IpcController {
   // A new window is taking over the process-global handlers. The close-time cleanup only clears
   // the caches when currentWin still matched the closing window, so if that ordering didn't hold
   // (closed not yet fired / skipped), stale lastEmitted signatures would survive and the dedupe
@@ -268,11 +311,36 @@ export function setupIpcHandlers(
   currentWin = win
   let activeColumnId: string | null = null
 
+  // Set the active column and notify the renderer. Shared by the IPC handler (sidebar/header
+  // clicks) and the keyboard shortcuts below.
+  const activateColumn = (columnId: string): void => {
+    if (win.isDestroyed() || !viewRegistry.has(columnId)) return
+    activeColumnId = columnId
+    win.webContents.send(CHANNELS.ACTIVE_CHANGED, activeColumnId)
+  }
+
+  // Cmd/Ctrl+1..9 select the 1st..9th column; Cmd/Ctrl+0 selects the 10th. Returns true when the
+  // input was a column-switch shortcut (so the caller can preventDefault). Handled via
+  // before-input-event on every webContents so it works regardless of which view has focus.
+  const handleColumnShortcut = (input: Electron.Input): boolean => {
+    if (input.type !== 'keyDown' || !hasColumnSwitchModifier(input)) return false
+    if (!/^[0-9]$/.test(input.key)) return false
+    const index = input.key === '0' ? 9 : Number(input.key) - 1
+    const views = getOrderedViews()
+    if (index < views.length) activateColumn(views[index].descriptor.accountId)
+    return true
+  }
+
   // ipcMain.handle is process-global; clear any prior registration first so re-invocation
   // (macOS window re-create, main-process HMR) can't throw "second handler" on register.
   for (const channel of HANDLED_CHANNELS) {
     ipcMain.removeHandler(channel)
   }
+
+  // Shortcuts pressed while the sidebar/renderer has focus.
+  win.webContents.on('before-input-event', (event, input) => {
+    if (handleColumnShortcut(input)) event.preventDefault()
+  })
 
   // Defense-in-depth: these handlers are process-global, so reject invocations whose sender
   // isn't the trusted main-window renderer (the WebContentsViews have no preload/ipcRenderer,
@@ -293,10 +361,7 @@ export function setupIpcHandlers(
 
   ipcMain.handle(CHANNELS.SET_ACTIVE_COLUMN, (event, columnId: string) => {
     if (win.isDestroyed() || event.sender !== win.webContents) return
-    if (!viewRegistry.has(columnId)) return
-
-    activeColumnId = columnId
-    win.webContents.send(CHANNELS.ACTIVE_CHANGED, activeColumnId)
+    activateColumn(columnId)
   })
 
   ipcMain.handle(CHANNELS.GO_BACK, (event, columnId: string) => {
@@ -343,44 +408,190 @@ export function setupIpcHandlers(
     }
   })
 
-  ipcMain.handle(CHANNELS.SET_COLUMN_VISIBLE, () => {
-    // Phase5 scope.
+  ipcMain.handle(CHANNELS.SET_COLUMN_VISIBLE, (event, columnId: string, visible: boolean) => {
+    if (win.isDestroyed() || event.sender !== win.webContents) return
+    const account = getAccountById(columnId)
+    if (!account || account.isVisible === visible) return
+
+    // Persist first so the column set survives restart and the order-position computation below
+    // sees the new visibility.
+    updateAccount(columnId, { isVisible: visible })
+
+    if (visible) {
+      const updated = getAccountById(columnId)
+      if (updated) {
+        // Re-insert at the account's order position among the now-visible accounts (not appended),
+        // so a re-shown column returns to where it belongs. The view is recreated from the
+        // persisted session, so the login state is preserved.
+        const insertIndex = getAccounts()
+          .filter((a) => a.isVisible)
+          .sort((a, b) => a.order - b.order)
+          .findIndex((a) => a.id === columnId)
+        addColumn(updated, insertIndex === -1 ? undefined : insertIndex)
+      }
+    } else {
+      // Destroys the WebContentsView but leaves the persisted session on disk intact.
+      removeColumn(columnId)
+    }
+
+    broadcastAccounts(win)
   })
 
-  ipcMain.handle(CHANNELS.CLOSE_COLUMN, () => {
-    // Phase5 scope.
+  ipcMain.handle(CHANNELS.CLOSE_COLUMN, async (event, columnId: string) => {
+    if (win.isDestroyed() || event.sender !== win.webContents) return
+    const account = getAccountById(columnId)
+    if (!account) return
+
+    // Confirm before a destructive, irreversible delete (removes the persisted session too).
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'warning',
+      buttons: ['キャンセル', '削除'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'アカウントを削除',
+      message: `「${account.displayName || account.service}」を削除しますか？`,
+      detail:
+        'このアカウントのログイン情報・セッションデータも完全に削除されます。この操作は取り消せません。',
+    })
+    if (response !== 1) return
+    if (win.isDestroyed()) return
+
+    // Tear down the live column (no-op if the account was hidden), wipe its on-disk session, then
+    // drop it from the store and tell the renderer. A session-wipe failure (locked files, etc.)
+    // must not strand the account in the store, so always proceed to removeAccount.
+    removeColumn(columnId)
+    try {
+      await clearSessionData({ service: account.service, accountId: account.id })
+    } catch (err) {
+      console.error(`Failed to clear session data for account ${columnId}:`, err)
+    }
+    removeAccount(columnId)
+    if (!win.isDestroyed()) broadcastAccounts(win)
   })
 
-  ipcMain.handle(CHANNELS.REQUEST_ADD_ACCOUNT, () => {
-    // Phase5 scope.
+  ipcMain.handle(CHANNELS.REQUEST_ADD_ACCOUNT, async (event) => {
+    if (win.isDestroyed() || event.sender !== win.webContents) return
+
+    // Pick the service via a native dialog, then create the account and spawn its column. The new
+    // column has an empty session, so loading the service URL lands on its login page.
+    const services: ServiceName[] = ['x', 'bluesky', 'threads']
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'question',
+      buttons: [...services.map((s) => SERVICE_META[s].label), 'キャンセル'],
+      cancelId: services.length,
+      defaultId: 0,
+      title: 'アカウントを追加',
+      message: '追加するサービスを選択してください',
+    })
+    if (response < 0 || response >= services.length) return
+    if (win.isDestroyed()) return
+
+    const service = services[response]
+    const maxOrder = getAccounts().reduce((max, a) => Math.max(max, a.order), -1)
+    const account = addAccount({
+      service,
+      displayName: SERVICE_META[service].label,
+      username: null,
+      avatarUrl: null,
+      order: maxOrder + 1,
+      isVisible: true,
+    })
+    addColumn(account)
+    broadcastAccounts(win)
   })
 
-  viewRegistry.forEach((managedView, columnId) => {
-    managedView.view.webContents.on('did-navigate', () => {
-      if (win.isDestroyed()) return
+  ipcMain.handle(CHANNELS.REORDER_COLUMNS, (event, orderedVisibleIds: string[]) => {
+    if (win.isDestroyed() || event.sender !== win.webContents) return
+    if (!Array.isArray(orderedVisibleIds)) return
+
+    // Only the dragged visible columns define the new sequence; hidden accounts keep their
+    // relative order and follow. Persist sequential `order` for all accounts so the arrangement
+    // survives restart, then reorder the live views to match and re-broadcast. Dedupe first so a
+    // malformed payload with repeated ids can't produce duplicate/conflicting order writes.
+    const allAccounts = getAccounts()
+    const accountsById = new Map(allAccounts.map((a) => [a.id, a]))
+
+    const uniqueIds = Array.from(new Set(orderedVisibleIds))
+    const validIds = uniqueIds.filter((id) => accountsById.get(id)?.isVisible)
+    if (validIds.length === 0) return
+    const hidden = allAccounts
+      .filter((a) => !validIds.includes(a.id))
+      .sort((a, b) => a.order - b.order)
+
+    const finalOrder = [...validIds, ...hidden.map((a) => a.id)]
+    updateAccountsOrder(finalOrder)
+
+    reorderColumns(validIds)
+    broadcastAccounts(win)
+  })
+
+  // The renderer signals readiness once its IPC listeners are registered (in a useEffect). Push
+  // the current layout + account list in response, avoiding the race where a startup broadcast
+  // beats the renderer's listener registration and the initial state is dropped.
+  ipcMain.handle(CHANNELS.RENDERER_READY, (event) => {
+    if (win.isDestroyed() || event.sender !== win.webContents) return
+    applyLayout()
+    broadcastAccounts(win)
+  })
+
+  // Wire a single column's navigation/login listeners. Called for every existing view at setup
+  // and again by columnManager whenever a column is added at runtime.
+  const registerView = (managedView: ManagedView): void => {
+    const columnId = managedView.descriptor.accountId
+    const wc = managedView.view.webContents
+
+    const sendNavState = (): void => {
+      if (win.isDestroyed() || wc.isDestroyed()) return
       win.webContents.send(CHANNELS.NAV_STATE_CHANGED, {
         columnId,
-        canGoBack: managedView.view.webContents.canGoBack(),
-        canGoForward: managedView.view.webContents.canGoForward(),
+        canGoBack: wc.canGoBack(),
+        canGoForward: wc.canGoForward(),
       })
+    }
+
+    wc.on('did-navigate', () => {
+      sendNavState()
       void emitAccountInfo(columnId, managedView, win, isLoggedIn)
     })
-
-    managedView.view.webContents.on('did-finish-load', () => {
+    wc.on('did-finish-load', () => {
       void emitAccountInfo(columnId, managedView, win, isLoggedIn)
     })
-
-    managedView.view.webContents.on('did-navigate-in-page', (_event, _url, isMainFrame) => {
+    wc.on('did-navigate-in-page', (_event, _url, isMainFrame) => {
       if (!isMainFrame) return
-      if (win.isDestroyed()) return
-      win.webContents.send(CHANNELS.NAV_STATE_CHANGED, {
-        columnId,
-        canGoBack: managedView.view.webContents.canGoBack(),
-        canGoForward: managedView.view.webContents.canGoForward(),
-      })
+      sendNavState()
       void emitAccountInfo(columnId, managedView, win, isLoggedIn)
     })
-  })
+    // Column-switch shortcuts pressed while this view (an SNS page) has focus.
+    wc.on('before-input-event', (event, input) => {
+      if (handleColumnShortcut(input)) event.preventDefault()
+    })
+    // Unread count: SNS pages prefix the document title with "(N)". Parse it and surface the
+    // number on the column header.
+    wc.on('page-title-updated', (_event, title) => {
+      if (win.isDestroyed()) return
+      // The unread count is prefixed at the start of the title (e.g. "(3) Home / X"). Anchor to
+      // the start so a parenthesized number elsewhere (a year like "(2024)", a handle, etc.) isn't
+      // misread as unread. The optional `+` handles X's "(99+)" form — treat it as 100 so the
+      // header renders "99+".
+      const match = /^\s*\((\d+)(\+)?\)/.exec(title)
+      const count = match ? Number(match[1]) + (match[2] ? 1 : 0) : 0
+      win.webContents.send(CHANNELS.UNREAD_CHANGED, { columnId, count })
+    })
+  }
+
+  // Drop a removed column's per-column state. Its webContents is destroyed by columnManager, which
+  // takes its listeners with it, so only the caches and active-column reference need clearing.
+  const unregisterView = (accountId: string): void => {
+    lastGoodProfile.delete(accountId)
+    lastEmitted.delete(accountId)
+    emittingColumns.delete(accountId)
+    rerunRequested.delete(accountId)
+    if (activeColumnId === accountId) activeColumnId = null
+  }
+
+  // Attach to any views that already exist (none at first setup; columnManager registers each as
+  // it instantiates them).
+  viewRegistry.forEach((managedView) => registerView(managedView))
 
   // Safety net: sign-outs in an SPA can clear the session without firing a navigation, so
   // poll login state and let the dedupe in emitAccountInfo suppress no-op updates. Clear any
@@ -416,4 +627,6 @@ export function setupIpcHandlers(
       currentWin = null
     }
   })
+
+  return { registerView, unregisterView }
 }

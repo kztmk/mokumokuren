@@ -112,3 +112,15 @@ export interface ColumnLayoutSnapshot {
   sidebarW: number
   headerH: number
 }
+
+// The full set of accounts (visible and hidden), broadcast to the renderer so the sidebar can
+// offer hidden accounts for re-showing and (later phases) manage add/delete/reorder. Distinct from
+// ColumnLayoutSnapshot, which only carries the currently-visible columns and their geometry.
+export interface AccountSummary {
+  id: string
+  service: ServiceName
+  displayName: string
+  username: string | null
+  isVisible: boolean
+  order: number
+}
