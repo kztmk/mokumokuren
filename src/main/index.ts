@@ -2,49 +2,20 @@ import { app, shell, BrowserWindow, ipcMain, type Session, type WebContents } fr
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { addAccount, getAccounts, type Account } from './accountStore'
+import { getAccounts, type Account } from './accountStore'
 import { isEncryptionAvailable } from './safeStorageWrapper'
 import { runIsolationHarness } from './isolationHarness'
 import { applyLayout, initLayoutManager } from './layoutManager'
 import { setupIpcHandlers, broadcastAccounts } from './ipcHandlers'
 import { initColumnManager, getViewRegistry } from './columnManager'
 
-const PROTOTYPE_ACCOUNTS: Parameters<typeof addAccount>[0][] = [
-  {
-    service: 'x',
-    displayName: 'X Proto',
-    username: 'proto',
-    avatarUrl: '',
-    order: 0,
-    isVisible: true,
-  },
-  {
-    service: 'bluesky',
-    displayName: 'Bluesky Proto',
-    username: 'proto',
-    avatarUrl: '',
-    order: 1,
-    isVisible: true,
-  },
-  {
-    service: 'threads',
-    displayName: 'Threads Proto',
-    username: 'proto',
-    avatarUrl: '',
-    order: 2,
-    isVisible: true,
-  },
-]
-
+// Phase5: a clean install starts with no accounts; the user adds them via the sidebar "+". All
+// *visible* accounts get a column on startup (hidden ones keep their session but no view). No cap
+// here — the user controls how many columns are shown via the hide toggle.
 function getStartupAccounts(): Account[] {
-  const accounts = getAccounts()
-  const startupAccounts =
-    accounts.length > 0 ? accounts : PROTOTYPE_ACCOUNTS.map((account) => addAccount(account))
-
-  return startupAccounts
+  return getAccounts()
     .filter((account) => account.isVisible)
     .sort((a, b) => a.order - b.order)
-    .slice(0, 3)
 }
 
 // Auth detection differs per service:
