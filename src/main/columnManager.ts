@@ -67,7 +67,9 @@ function buildManagedView(account: Account): ManagedView {
         if (allowedHosts.some((h) => hostname === h || hostname.endsWith('.' + h))) {
           return { action: 'allow' }
         }
-        shell.openExternal(url)
+        shell.openExternal(url).catch((err) => {
+          console.error(`Failed to open external URL: ${url}`, err)
+        })
       }
     } catch {
       // invalid URL → deny
@@ -111,8 +113,14 @@ export function initColumnManager(
   currentWindow = window
   hooks = columnHooks
   // On macOS the window can be closed then re-created (dock click), calling this again. The
-  // module-level collections still hold the previous (destroyed) window's views — clear them so
-  // we don't append to stale entries and crash when applyLayout iterates destroyed views.
+  // module-level collections still hold the previous window's views — actively close their
+  // webContents (otherwise the orphaned pages keep running/leaking) before clearing, so we don't
+  // append to stale entries and crash when applyLayout iterates destroyed views.
+  for (const mv of orderedViews) {
+    if (!mv.view.webContents.isDestroyed()) {
+      mv.view.webContents.close()
+    }
+  }
   orderedViews.length = 0
   registry.clear()
   for (const account of accounts) instantiateColumn(account)

@@ -145,7 +145,9 @@ function createWindow(): void {
     try {
       const { protocol } = new URL(details.url)
       if (protocol === 'http:' || protocol === 'https:') {
-        shell.openExternal(details.url)
+        shell.openExternal(details.url).catch((err) => {
+          console.error(`Failed to open external URL: ${details.url}`, err)
+        })
       }
     } catch {
       // invalid URL → deny
