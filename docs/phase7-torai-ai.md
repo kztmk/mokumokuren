@@ -1,62 +1,70 @@
-# Phase 7 設計：虎威 AI 下書き統合（A案：BYOK + status トークン）
+# Phase 7 設計：虎威 AI 下書き統合（A案：BYOK + 虎威アンロックキー）
 
 ## 0. 方針サマリ
 - **無料コア・ビューア（認知）＋ 虎威会員限定の AI 下書き（成約）** のフリーミアム。
 - **AI 生成は BYOK（ユーザー自身の Gemini API キー）でローカル実行** → 虎威の推論コストは 0。
 - **ゲートは虎威への「subscription_status のみ」の問い合わせ**。Electron 側の Google OAuth は実装しない（A案）。
-- ユーザーがアプリに登録するのは **(1) Gemini API キー / (2) 虎威 status トークン** の2つ（どちらも一度きり）。
+- ユーザーがアプリに登録するのは **(1) Gemini API キー / (2) 虎威アンロックキー（unlockKey）** の2つ（どちらも一度きり）。
 
 ```
 [AI生成] アプリ内の Gemini キー(safeStorage) → ローカルで Gemini 直叩き（虎威コスト0）
-[ゲート]  アプリ → 虎威Function /verifyStatus {token} → {active} のみ
-          active のときだけ AI 機能を有効化（失効時はセールス導線）
+[ゲート]  アプリ → checkFreeToolSubscriptionStatus {unlockKey} → {subscription_status} のみ
+          active のときだけ AI 機能を有効化（inactive/失効時はセールス導線）
 ```
 
 ---
 
-## 1. status 確認 API 契約（虎威 Function）
+## 1. status 確認 API 契約（虎威 Function・**実装済み**）
+
+虎威 Functions 側で実装・確定済み（`functions/src/handlers/freeTool.ts`）。アプリはこの実契約に合わせる。
 
 ### エンドポイント
-`POST /verifyStatus`（HTTPS Function。Firebase callable でも可）
-
-### リクエスト
-```json
-{ "token": "<虎威が発行した不透明な status トークン>" }
 ```
+POST https://asia-northeast1-<project-id>.cloudfunctions.net/checkFreeToolSubscriptionStatus
+Content-Type: application/json
+```
+- **POST 専用**（GET は廃止。キーを URL クエリに乗せない）。
+
+### リクエスト（body のみ）
+```json
+{ "unlockKey": "TORAI-..." }
+```
+- フィールドは `unlockKey`（別名 `key` も可）。
 
 ### レスポンス（200）
 ```json
 {
-  "active": true,
-  "expiresAt": "2026-07-20T00:00:00Z",   // 任意: 次回再検証の目安（オフライン猶予の上限に使用）
-  "plan": "standard"                       // 任意: 表示用
+  "success": true,
+  "subscription_status": "active",   // "active" | "inactive"
+  "subscriptionStatus": "active",     // 同値（キャメル別名）
+  "cached": false,
+  "checkedAt": "2026-06-21T00:00:00.000Z",
+  "nextRefreshAt": "2026-07-01T00:00:00.000Z"
 }
 ```
-- `active`: `subscription_status === 'active'` の真偽。
-- `expiresAt`: 任意。アプリの再検証サイクル／オフライン猶予の上限に使う。
+- 判定は `subscription_status === 'active'`。
+- `nextRefreshAt`：サーバ側キャッシュ期限。アプリ側の再検証/オフライン猶予の目安に流用可。
 
 ### エラー
 | HTTP | code | 意味 | アプリの挙動 |
 | --- | --- | --- | --- |
-| 401 | `invalid_token` | 未知/失効トークン | トークン再登録を促す＋虎威セールスへ |
-| 403 | `inactive` | トークンは有効だがサブスク非アクティブ | 「虎威のサブスクが必要」＋セールスへ |
-| 429 | `rate_limited` | レート上限 | バックオフし、キャッシュ状態を使用 |
-| 5xx | `server_error` | 一時障害 | キャッシュ状態を使用（オフライン猶予） |
+| 405 | `method-not-allowed` | POST 以外 | （アプリは常に POST） |
+| 400 | `invalid-argument` | キー未指定 | 入力エラー表示 |
+| 403 | `permission-denied` | キーが無効/失効 | キー再登録を促す＋虎威セールスへ |
+| 500 | `internal` | 一時障害 | キャッシュ状態を使用（オフライン猶予） |
 
-> 設計上、`inactive` を 200 + `{active:false}` で返しても良い（アプリ側の分岐は同じ）。エラーコード体系は虎威側の都合で確定。
+> **重要な分岐**：`200 + subscription_status:'inactive'`（＝キーは有効だが非会員）と `403`（＝キーが無効/失効）は別物。前者は「サブスク必要」、後者は「キー再登録」へ誘導。
 
-### 虎威側の実装メモ
-- **トークン → uid 解決**：`statusTokens/{token} → { uid, createdAt, revoked }`（Firestore）。
-- **status 取得**：`users/{uid}.subscription_status` を読む（Admin SDK）。
-- **返すのは status のみ**（キー・PII は返さない）。✓ status-only。
-- **自動失効**：サブスクが切れれば次回チェックで `active:false`。
-- **レート制限**：トークン単位（例：60 req/時）。共有・総当たり対策。
-- **Firestore ルール**：`statusTokens` はクライアント read/write 不可（サーバのみ）。`subscription_status` は本人 read のみ・書き込みは決済 Webhook（Functions）のみ（既存）。
+### サーバ側の挙動（確認済み）
+- **キー保存はSHA-256ハッシュのみ**（生キーは保存しない）。`freeToolUnlockKeys/{keyHash}`。
+- **status 取得**：`users/{uid}.subscriptionStatus`（`appPlanId === 'lifetime'` も active 扱い）。返すのは status のみ（キー/PII は返さない）。
+- **サーバ側キャッシュ 10日**。ただし **`invalidateFreeToolCacheOnUserChange`（`users/{uid}` トリガー）が `subscriptionStatus`/`appPlanId` 変化時に該当キーのキャッシュを即破棄** → **状態変化は次回チェックで即反映**（新規加入の即解放／解約の即反映が成立）。
+- **Firestore ルール**：`freeToolUnlockKeys` / `freeToolUnlockKeyUsers` はクライアント read/write 不可（Admin のみ）。
 
-### トークン・ライフサイクル（虎威 Web 側）
-- active 会員が **status トークンを発行**（不透明・ランダム）。
-- 再発行 / 失効 / ローテーション可能。
-- 既定は「長期・失効可能」。必要なら短命＋リフレッシュも検討（要否は虎威側で判断）。
+### アンロックキーのライフサイクル（虎威 Web 側・確認済み）
+- `issueFreeToolUnlockKey`（Callable・要認証）で発行。**生キーは発行レスポンスで一度だけ返却**（保存はハッシュのみ）。
+- **再発行で旧キーは `revoked:true` で失効**。失効キーは check 側で 403。
+- 残課題（任意・優先度低）：公開 HTTP 関数の **レート制限 / App Check**（DoS・コスト対策）。
 
 ---
 
@@ -64,13 +72,14 @@
 
 `safeStorage`（既存 `safeStorageWrapper.ts`）に暗号化保存：
 - `geminiApiKey`（BYOK、生成に使用）
-- `toraiStatusToken`（ゲートに使用）
-- `lastStatus`: `{ active: boolean, expiresAt?: string, checkedAt: string }`（オフライン猶予用キャッシュ）
+- `toraiUnlockKey`（ゲートに使用＝虎威アンロックキー）
+- `lastStatus`: `{ active: boolean, nextRefreshAt?: string, checkedAt: string }`（オフライン猶予用キャッシュ。`active` は `subscription_status === 'active'` から導出）
 
 ### 再検証サイクル
 - **起動時** ＋ **一定間隔**（例：6h）＋ **AI パネルを開いた時**。
-- オフライン/5xx 時は `lastStatus.active` を **`expiresAt` または `checkedAt + N日` のいずれか早い方まで**有効とみなす（猶予日数 N は要決定）。
-- `active:false` / `invalid_token` を受けたら AI 機能を無効化し、虎威セールスへ（`shell.openExternal`、http/https ガード済み）。
+- サーバが状態変化時にキャッシュを破棄するため、**起動時チェックで最新状態が即反映**される（新規加入の即解放）。
+- オフライン/5xx 時は `lastStatus.active` を **`nextRefreshAt` または `checkedAt + N日` のいずれか早い方まで**有効とみなす（猶予日数 N は要決定）。
+- `200 + inactive` → AI 無効化＋「サブスク必要」、`403` → AI 無効化＋「キー再登録」。いずれも虎威セールスへ（`shell.openExternal`、http/https ガード済み）。
 
 ---
 
@@ -87,11 +96,11 @@
 
 ## 4. アプリ側 タスク分解
 
-### A. ゲート（status トークン）
-- [ ] channels：`VERIFY_STATUS` 追加、preload に `verifyStatus()/onAiAvailability()`、IPC 実装。
-- [ ] 設定UI：虎威 status トークンの登録/更新/クリア → safeStorage。
-- [ ] main：虎威 `/verifyStatus` 呼び出し、`lastStatus` キャッシュ、再検証サイクル、オフライン猶予。
-- [ ] レンダラーへ「AI 利用可否」を配信 → AI UI をゲート。非アクティブ時は虎威セールスへの導線。
+### A. ゲート（虎威アンロックキー）
+- [ ] channels：`SET_UNLOCK_KEY` / `CHECK_SUBSCRIPTION` 等を追加、preload に `setUnlockKey()/onAiAvailability()`、IPC 実装。
+- [ ] 設定UI：虎威アンロックキーの登録/更新/クリア → safeStorage。
+- [ ] main：`POST checkFreeToolSubscriptionStatus {unlockKey}` 呼び出し、`lastStatus` キャッシュ、再検証サイクル、オフライン猶予。`403`/`200+inactive` を区別して扱う。
+- [ ] レンダラーへ「AI 利用可否」を配信 → AI UI をゲート。inactive/失効時は虎威セールスへの導線。
 
 ### B. Gemini キー（BYOK）
 - [ ] 設定UI：Gemini キーの登録/クリア（任意で軽い疎通テスト）→ safeStorage。
@@ -103,18 +112,25 @@
 - [ ] ローディング/進捗・エラー表示（更新ボタンの進捗パターンを流用）。
 
 ### D. 横断・設定
-- [ ] エラー体系：無効キー / Gemini 側エラー / コンテンツブロック / トークン無効・非アクティブ。
+- [ ] エラー体系：無効キー(403) / 非会員(200+inactive) / Gemini 側エラー / コンテンツブロック。
 - [ ] `@google/generative-ai` を依存追加（externalize＋同梱、ネイティブ依存なし）。
-- [ ] ログにキー/トークンを出さない。
+- [ ] ログにキー(Gemini/アンロック)を出さない。
 
 ---
 
-## 5. 要決定事項（虎威・プロダクト側）
-1. status トークンの寿命：長期・失効可能 / 短命＋リフレッシュ。
-2. 再検証サイクル＋オフライン猶予日数 N。
-3. v1 プロンプト：X 専用 / マルチSNS パラメータ化。
-4. AI ゲートを**唯一の有料機能**にするか（＝ビューアは無料・フリーミアム確定か）。
-5. レート制限値・エラーコード体系の確定（虎威 Function 側）。
+## 5. 要決定事項
+
+### 虎威側（確定済み ✅）
+- ~~キーの寿命/失効~~ → 再発行で旧キー失効、check 側で 403。
+- ~~レート制限・エラーコード~~ → エラーコード確定。レート制限/App Check のみ任意の残課題。
+- ~~POST/GET~~ → POST 専用に確定。
+- ~~サブスク変更の即時反映~~ → `users/{uid}` トリガーでキャッシュ破棄、確定。
+
+### アプリ・プロダクト側（未決）
+1. 再検証サイクル＋オフライン猶予日数 N。
+2. v1 プロンプト：X 専用 / マルチSNS パラメータ化。
+3. AI ゲートを**唯一の有料機能**にするか（＝ビューアは無料・フリーミアム確定か）。
+4. Gemini モデル：`gemini-flash-lite-latest` 踏襲か見直しか。
 
 ## 6. スコープ外（今回見送り）
 - node-llama-cpp によるローカルLLM（将来「キー不要・オフライン」版として再検討）。
