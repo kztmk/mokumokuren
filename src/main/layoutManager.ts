@@ -71,3 +71,12 @@ export function applyLayout(): void {
 export function getSnapshot(): ColumnLayoutSnapshot {
   return snapshot
 }
+
+// WebContentsView はレンダラー DOM の上に合成されるため、AI パネル等の DOM オーバーレイを前面に
+// 出すには全カラムの view を一時的に非表示にする必要がある。再表示時はレイアウトを再適用する。
+export function setColumnsVisible(visible: boolean): void {
+  for (const { view } of getOrderedViews()) {
+    if (!view.webContents.isDestroyed()) view.setVisible(visible)
+  }
+  if (visible) applyLayout()
+}

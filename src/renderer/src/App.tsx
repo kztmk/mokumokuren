@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { ColumnHeader } from './components/ColumnHeader'
+import { AiPanel } from './components/AiPanel'
 import {
   ACTIVE_BORDER_COLOR,
   type AccountSummary,
+  type AiState,
   type ColumnDescriptor,
   type MenuKey,
   type ServiceName,
@@ -22,6 +24,13 @@ function App(): React.JSX.Element {
   const [accountInfos, setAccountInfos] = useState<Record<string, AccountInfo>>({})
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({})
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: 'idle' })
+  const [aiState, setAiState] = useState<AiState>({
+    available: false,
+    reason: 'checking',
+    hasUnlockKey: false,
+    hasGeminiKey: false,
+  })
+  const [aiOpen, setAiOpen] = useState(false)
   // In-app updates are macOS-only (Windows is managed by the Microsoft Store).
   const updatesSupported = window.electron?.process?.platform === 'darwin'
   // Ref (not a local var) so the once-only guard survives StrictMode unmount/remount.
@@ -83,6 +92,10 @@ function App(): React.JSX.Element {
         setUpdateStatus(status)
       }),
 
+      window.electronAPI.onAiState((state) => {
+        setAiState(state)
+      }),
+
       window.electronAPI.onActiveChanged((columnId) => {
         setActive(columnId)
       }),
@@ -113,6 +126,8 @@ function App(): React.JSX.Element {
     // this here (rather than relying on the page-load event) avoids dropping the initial state if
     // the broadcast would otherwise beat listener registration.
     window.electronAPI.rendererReady()
+    // Pull the current AI gate state once (the gate may not broadcast until its first check).
+    window.electronAPI.getAiState().then(setAiState)
 
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
   }, [])
@@ -146,8 +161,21 @@ function App(): React.JSX.Element {
     window.electronAPI.setColumnVisible(columnId, true)
   }
 
-  const handleComposePost = (service: ServiceName): void => {
-    window.electronAPI.composePost(service)
+  // text を渡すと作成画面を prefill（AI「採用」）。無しなら空エディタ（サイドバーの投稿ボタン）。
+  const handleComposePost = (service: ServiceName, text?: string): void => {
+    window.electronAPI.composePost(service, text)
+  }
+
+  const handleOpenAi = (): void => {
+    // Hide column WebContentsViews so the renderer DOM panel shows on top, then revalidate.
+    window.electronAPI.setAiOverlay(true)
+    window.electronAPI.checkSubscription()
+    setAiOpen(true)
+  }
+
+  const handleCloseAi = (): void => {
+    setAiOpen(false)
+    window.electronAPI.setAiOverlay(false)
   }
 
   const handleRequestAddAccount = (): void => {
@@ -182,6 +210,9 @@ function App(): React.JSX.Element {
     window.electronAPI.reorderColumns(ids)
   }
 
+  const activeColumn = columns.find((c) => c.accountId === activeColumnId) ?? columns[0] ?? null
+  const activeService: ServiceName | null = activeColumn?.service ?? null
+
   return (
     <>
       <Sidebar
@@ -198,7 +229,17 @@ function App(): React.JSX.Element {
         updateStatus={updateStatus}
         onCheckForUpdates={handleCheckForUpdates}
         onQuitAndInstall={handleQuitAndInstall}
+        aiAvailable={aiState.available}
+        onOpenAi={handleOpenAi}
       />
+      {aiOpen && (
+        <AiPanel
+          aiState={aiState}
+          activeService={activeService}
+          onClose={handleCloseAi}
+          onComposePost={handleComposePost}
+        />
+      )}
       {columns.map((col) => {
         const isActive = col.accountId === activeColumnId
         const navState = navStates[col.accountId] ?? { canGoBack: false, canGoForward: false }

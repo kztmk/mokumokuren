@@ -10,6 +10,8 @@ import { setupIpcHandlers } from './ipcHandlers'
 import { initColumnManager, getViewRegistry } from './columnManager'
 import { getInitialWindowBounds, trackWindowState } from './windowState'
 import { setupAutoUpdate } from './autoUpdate'
+import { setupToraiGate } from './toraiGate'
+import { setupGeminiDrafts } from './geminiDrafts'
 
 // Phase5: a clean install starts with no accounts; the user adds them via the sidebar "+". All
 // *visible* accounts get a column on startup (hidden ones keep their session but no view). No cap
@@ -38,10 +40,17 @@ const BLUESKY_LOGIN_EXPR = `(() => {
     const root = JSON.parse(localStorage.getItem('BSKY_STORAGE') || 'null')
     const session = root && root.session
     if (!session) return false
+    const accounts = Array.isArray(session.accounts) ? session.accounts : []
     const current = session.currentAccount
-    if (current && current.did && current.accessJwt) return true
-    return Array.isArray(session.accounts)
-      && session.accounts.some((a) => a && a.active && a.accessJwt)
+    // currentAccount is cleared on sign-out (tokens stay cached in accounts[], so we can't gate on
+    // accessJwt presence alone). Recent Bluesky keeps accessJwt on the accounts[] entry, not on
+    // currentAccount itself — so resolve the token by did rather than requiring it inline.
+    if (current && current.did) {
+      const acc = accounts.find((a) => a && a.did === current.did)
+      if ((acc && acc.accessJwt) || current.accessJwt) return true
+    }
+    // Fallback: an account explicitly flagged active with a token.
+    return accounts.some((a) => a && a.active && a.accessJwt)
   } catch {
     return false
   }
@@ -133,6 +142,9 @@ function createWindow(): void {
   // Update controller (mac-only): refreshes the window ref, runs the startup check once, and
   // serves the renderer's manual check / restart requests + progress.
   setupAutoUpdate(win)
+  // Phase 7: 虎威ゲート（subscription 可否）＋ BYOK Gemini 下書き生成。
+  setupToraiGate(win)
+  setupGeminiDrafts(win)
   initLayoutManager(win)
   initColumnManager(win, getStartupAccounts(), {
     onViewAdded: ipc.registerView,

@@ -18,4 +18,15 @@ export const CHANNELS = {
   CHECK_FOR_UPDATES: 'check-for-updates',
   QUIT_AND_INSTALL: 'quit-and-install',
   UPDATE_STATUS: 'update-status',
+  // Phase 7: AI 下書き（虎威ゲート + BYOK Gemini）
+  SET_UNLOCK_KEY: 'set-unlock-key',
+  CLEAR_UNLOCK_KEY: 'clear-unlock-key',
+  SET_GEMINI_KEY: 'set-gemini-key',
+  CLEAR_GEMINI_KEY: 'clear-gemini-key',
+  CHECK_SUBSCRIPTION: 'check-subscription',
+  GET_AI_STATE: 'get-ai-state',
+  AI_STATE: 'ai-state',
+  GENERATE_DRAFTS: 'generate-drafts',
+  // AI パネル表示中はカラムの WebContentsView を隠してレンダラーのオーバーレイを前面に出す
+  SET_AI_OVERLAY: 'set-ai-overlay',
 } as const

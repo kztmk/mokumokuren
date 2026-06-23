@@ -46,6 +46,8 @@ type SidebarProps = {
   updateStatus: UpdateStatus
   onCheckForUpdates: () => void
   onQuitAndInstall: () => void
+  aiAvailable: boolean
+  onOpenAi: () => void
 }
 
 export function Sidebar({
@@ -62,6 +64,8 @@ export function Sidebar({
   updateStatus,
   onCheckForUpdates,
   onQuitAndInstall,
+  aiAvailable,
+  onOpenAi,
 }: SidebarProps): React.JSX.Element {
   const activeColumn = columns.find((c) => c.accountId === activeColumnId) ?? columns[0] ?? null
   const activeService: ServiceName | null = activeColumn?.service ?? null
@@ -218,14 +222,17 @@ export function Sidebar({
           })}
       </nav>
 
-      {/* Account icon list — scrolls vertically when there are more accounts than fit. */}
+      {/* Account icon list — scrolls vertically when there are more accounts than fit.
+          overflowY:auto forces overflowX to auto too (CSS), which would clip the active icon's
+          orange glow to a square. The horizontal/top padding gives the box-shadow room inside the
+          scrollport so it renders as a full soft ring. */}
       <div
         style={{
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           gap: 8,
-          paddingBottom: 8,
+          padding: '6px 10px 8px',
           minHeight: 0,
           overflowY: 'auto',
         }}
@@ -447,6 +454,45 @@ export function Sidebar({
           {updateView.glyph}
         </button>
       )}
+
+      {/* AI draft button — always opens the panel (where keys are registered); the green dot
+          signals that the 虎威 gate is currently active (AI generation usable). */}
+      <button
+        title={aiAvailable ? 'AI 下書き（利用可）' : 'AI 下書き（設定が必要）'}
+        onClick={onOpenAi}
+        style={{
+          position: 'relative',
+          width: 48,
+          height: 48,
+          borderRadius: 24,
+          border: 'none',
+          background: 'transparent',
+          color: 'var(--chrome-text)',
+          cursor: 'pointer',
+          fontSize: 22,
+          marginBottom: 8,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        🤖
+        {aiAvailable && (
+          <span
+            style={{
+              position: 'absolute',
+              bottom: 6,
+              right: 6,
+              width: 10,
+              height: 10,
+              borderRadius: 5,
+              background: '#00BA7C',
+              border: '2px solid var(--sidebar-bg)',
+            }}
+          />
+        )}
+      </button>
 
       {/* Post button */}
       <button

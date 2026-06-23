@@ -3,7 +3,9 @@ import { electronAPI } from '@electron-toolkit/preload'
 import { CHANNELS } from '../shared/channels'
 import type {
   AccountSummary,
+  AiState,
   ColumnLayoutSnapshot,
+  GenerateResult,
   MenuKey,
   ServiceName,
 } from '../renderer/src/services'
@@ -45,13 +47,23 @@ type BridgeAPI = {
   onNavStateChanged: (callback: (state: NavState) => void) => Unsubscribe
   onActiveChanged: (callback: (columnId: string) => void) => Unsubscribe
   closeColumn: (columnId: string) => void
-  composePost: (service: ServiceName) => void
+  composePost: (service: ServiceName, text?: string) => void
   requestAddAccount: () => void
   reorderColumns: (orderedVisibleIds: string[]) => void
   rendererReady: () => void
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => Unsubscribe
   checkForUpdates: () => void
   quitAndInstall: () => void
+  // Phase 7: AI 下書き
+  onAiState: (callback: (state: AiState) => void) => Unsubscribe
+  getAiState: () => Promise<AiState>
+  setUnlockKey: (key: string) => Promise<AiState>
+  clearUnlockKey: () => Promise<AiState>
+  checkSubscription: () => Promise<AiState>
+  setGeminiKey: (key: string) => Promise<boolean>
+  clearGeminiKey: () => Promise<void>
+  generateDrafts: (keyword: string, service: ServiceName) => Promise<GenerateResult>
+  setAiOverlay: (on: boolean) => void
 }
 
 // Custom APIs for renderer
@@ -105,8 +117,8 @@ const bridgeAPI: BridgeAPI = {
   closeColumn: (columnId: string): void => {
     void ipcRenderer.invoke(CHANNELS.CLOSE_COLUMN, columnId)
   },
-  composePost: (service: ServiceName): void => {
-    void ipcRenderer.invoke(CHANNELS.COMPOSE_POST, service)
+  composePost: (service: ServiceName, text?: string): void => {
+    void ipcRenderer.invoke(CHANNELS.COMPOSE_POST, service, text)
   },
   requestAddAccount: (): void => {
     void ipcRenderer.invoke(CHANNELS.REQUEST_ADD_ACCOUNT)
@@ -127,6 +139,22 @@ const bridgeAPI: BridgeAPI = {
   },
   quitAndInstall: (): void => {
     void ipcRenderer.invoke(CHANNELS.QUIT_AND_INSTALL)
+  },
+  onAiState: (callback: (state: AiState) => void): Unsubscribe => {
+    const listener = (_: unknown, state: AiState): void => callback(state)
+    ipcRenderer.on(CHANNELS.AI_STATE, listener)
+    return () => ipcRenderer.removeListener(CHANNELS.AI_STATE, listener)
+  },
+  getAiState: (): Promise<AiState> => ipcRenderer.invoke(CHANNELS.GET_AI_STATE),
+  setUnlockKey: (key: string): Promise<AiState> => ipcRenderer.invoke(CHANNELS.SET_UNLOCK_KEY, key),
+  clearUnlockKey: (): Promise<AiState> => ipcRenderer.invoke(CHANNELS.CLEAR_UNLOCK_KEY),
+  checkSubscription: (): Promise<AiState> => ipcRenderer.invoke(CHANNELS.CHECK_SUBSCRIPTION),
+  setGeminiKey: (key: string): Promise<boolean> => ipcRenderer.invoke(CHANNELS.SET_GEMINI_KEY, key),
+  clearGeminiKey: (): Promise<void> => ipcRenderer.invoke(CHANNELS.CLEAR_GEMINI_KEY),
+  generateDrafts: (keyword: string, service: ServiceName): Promise<GenerateResult> =>
+    ipcRenderer.invoke(CHANNELS.GENERATE_DRAFTS, keyword, service),
+  setAiOverlay: (on: boolean): void => {
+    void ipcRenderer.invoke(CHANNELS.SET_AI_OVERLAY, on)
   },
 }
 

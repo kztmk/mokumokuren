@@ -56,6 +56,15 @@ export const COMPOSE_URL: Record<ServiceName, string> = {
   threads: '/intent/post',
 }
 
+// Compose route that accepts a `?text=` query param to PREFILL the editor (used by AI「採用」).
+// All three are official web intents that honor `text`. X's plain /compose/post does not reliably
+// prefill, so the text path uses /intent/tweet instead; bluesky/threads match COMPOSE_URL.
+export const COMPOSE_TEXT_URL: Record<ServiceName, string> = {
+  x: '/intent/tweet',
+  bluesky: '/intent/compose',
+  threads: '/intent/post',
+}
+
 // Canonical per-service origin. Single source of truth shared by the main process (startup
 // loadURL, navigation/compose URL building) so the base URLs can't drift between files.
 export const SNS_URLS: Record<ServiceName, string> = {
@@ -141,3 +150,38 @@ export interface UpdateStatus {
   percent?: number
   message?: string
 }
+
+// Phase 7: AI 下書き（虎威ゲート + BYOK Gemini）。main の toraiGate.ts / geminiDrafts.ts と同形。
+export type AiReason =
+  | 'ok'
+  | 'no-unlock-key'
+  | 'inactive'
+  | 'invalid-key'
+  | 'error'
+  | 'unavailable'
+  | 'checking'
+
+export interface AiState {
+  available: boolean
+  reason: AiReason
+  hasUnlockKey: boolean
+  hasGeminiKey: boolean
+  cached?: boolean
+  checkedAt?: string
+  nextRefreshAt?: string
+  message?: string
+}
+
+export interface Draft {
+  id: string
+  text: string
+  adopted: boolean
+}
+
+export type GenerateResult =
+  | { ok: true; drafts: Draft[] }
+  | {
+      ok: false
+      code: 'no-key' | 'not-subscribed' | 'blocked' | 'parse' | 'api' | 'unavailable'
+      message: string
+    }
