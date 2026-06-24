@@ -50,6 +50,7 @@ type BridgeAPI = {
   composePost: (service: ServiceName, text?: string) => void
   requestAddAccount: () => void
   reorderColumns: (orderedVisibleIds: string[]) => void
+  scrollColumns: (delta: number) => void
   rendererReady: () => void
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => Unsubscribe
   checkForUpdates: () => void
@@ -125,6 +126,9 @@ const bridgeAPI: BridgeAPI = {
   },
   reorderColumns: (orderedVisibleIds: string[]): void => {
     void ipcRenderer.invoke(CHANNELS.REORDER_COLUMNS, orderedVisibleIds)
+  },
+  scrollColumns: (delta: number): void => {
+    void ipcRenderer.invoke(CHANNELS.SCROLL_COLUMNS, delta)
   },
   rendererReady: (): void => {
     void ipcRenderer.invoke(CHANNELS.RENDERER_READY)

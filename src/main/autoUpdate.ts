@@ -70,7 +70,7 @@ export function setupAutoUpdate(window: BrowserWindow): void {
   )
   autoUpdater.on('error', (err) => send({ state: 'error', message: String(err?.message ?? err) }))
 
-  // Startup check (once). autoDownload fetches it; the renderer surfaces progress and a restart
-  // action via the update status above.
-  autoUpdater.checkForUpdates().catch((err) => send({ state: 'error', message: String(err) }))
+  // The startup check is triggered by the renderer (App mount → CHECK_FOR_UPDATES) once its
+  // UPDATE_STATUS listener is registered, so the initial `checking`/result isn't sent before the
+  // renderer can receive it. autoDownload then fetches any available update in the background.
 }

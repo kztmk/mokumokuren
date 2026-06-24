@@ -116,10 +116,26 @@ export interface ColumnDescriptor {
   borderW: number
 }
 
+// Phase 8: a column that is currently scrolled off-screen and represented only by a vertical tab
+// in the left/right overflow rail (its WebContentsView is hidden). Lighter than ColumnDescriptor —
+// the renderer looks up unread/avatar/active state from its own maps.
+export interface OverflowTab {
+  accountId: string
+  service: ServiceName
+  username: string | null
+}
+
 export interface ColumnLayoutSnapshot {
+  // Only the columns currently visible in the viewport (a contiguous window of the live columns).
   columns: ColumnDescriptor[]
   sidebarW: number
   headerH: number
+  // Live columns scrolled off the left / right edge, in order. Rendered as vertical tab rails.
+  overflowLeft: OverflowTab[]
+  overflowRight: OverflowTab[]
+  // Width of each overflow rail (0 when that side is rendered without a rail; the arrays being
+  // empty is the real signal). Shared so the renderer positions columns/rails consistently.
+  railW: number
 }
 
 // The full set of accounts (visible and hidden), broadcast to the renderer so the sidebar can
