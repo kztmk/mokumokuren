@@ -22,6 +22,8 @@ const TORAI_SALES_URL = 'https://torai-e0d8e.web.app'
 
 async function copyToClipboard(text: string): Promise<boolean> {
   try {
+    // navigator.clipboard はセキュアコンテキスト外などで undefined になりうる（直接呼ぶと TypeError）。
+    if (!navigator.clipboard) return false
     await navigator.clipboard.writeText(text)
     return true
   } catch {

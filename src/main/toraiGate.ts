@@ -247,6 +247,12 @@ function fallbackToCache(hasUnlockKey: boolean, hasGeminiKey: boolean, message: 
 
 export function setupToraiGate(window: BrowserWindow): void {
   win = window
+  // Drop the reference when this window closes so the destroyed BrowserWindow can be GC'd (on
+  // macOS the process stays resident after close). Guard on identity so a newer window that
+  // already took over isn't cleared by a late `closed` from the old one.
+  window.on('closed', () => {
+    if (win === window) win = null
+  })
   if (initialized) {
     // mac の window 再生成時はリファレンス更新＋現状を再配信のみ
     broadcast()

@@ -166,6 +166,10 @@ let initialized = false
 
 export function setupGeminiDrafts(window: BrowserWindow): void {
   win = window
+  // Drop the reference on close so the destroyed window can be GC'd (mac keeps the process alive).
+  window.on('closed', () => {
+    if (win === window) win = null
+  })
   if (initialized) return
   initialized = true
 

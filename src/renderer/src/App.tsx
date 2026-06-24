@@ -142,6 +142,9 @@ function App(): React.JSX.Element {
     window.electronAPI.rendererReady()
     // Pull the current AI gate state once (the gate may not broadcast until its first check).
     window.electronAPI.getAiState().then(setAiState)
+    // Run the startup update check now that the UPDATE_STATUS listener is registered (main no longer
+    // checks at setup time, which would emit before the renderer could receive it). mac-only.
+    if (updatesSupported) window.electronAPI.checkForUpdates()
 
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
   }, [])
