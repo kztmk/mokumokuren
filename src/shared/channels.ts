@@ -8,6 +8,8 @@ export const CHANNELS = {
   CLOSE_COLUMN: 'close-column',
   REQUEST_ADD_ACCOUNT: 'request-add-account',
   REORDER_COLUMNS: 'reorder-columns',
+  // Phase 8: shift the visible column window left/right (overflow rail ◀▶ buttons)
+  SCROLL_COLUMNS: 'scroll-columns',
   RENDERER_READY: 'renderer-ready',
   NAV_STATE_CHANGED: 'nav-state-changed',
   COLUMN_LAYOUT: 'column-layout',

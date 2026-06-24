@@ -50,6 +50,7 @@ interface ElectronBridgeAPI {
   composePost: (service: ServiceName, text?: string) => void
   requestAddAccount: () => void
   reorderColumns: (orderedVisibleIds: string[]) => void
+  scrollColumns: (delta: number) => void
   rendererReady: () => void
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => Unsubscribe
   checkForUpdates: () => void

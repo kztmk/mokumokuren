@@ -26,7 +26,7 @@ import {
   removeAccount,
 } from './accountStore'
 import { clearSessionData } from './sessionManager'
-import { applyLayout } from './layoutManager'
+import { applyLayout, revealColumn, scrollColumnWindow } from './layoutManager'
 
 // Extracts the account HANDLE (not the display name): it feeds buildNavigationUrl's
 // `:username` substitution, so it must be the URL handle. Sourced from the logged-in user's
@@ -264,6 +264,7 @@ const HANDLED_CHANNELS = [
   CHANNELS.CLOSE_COLUMN,
   CHANNELS.REQUEST_ADD_ACCOUNT,
   CHANNELS.REORDER_COLUMNS,
+  CHANNELS.SCROLL_COLUMNS,
   CHANNELS.RENDERER_READY,
 ]
 
@@ -317,6 +318,9 @@ export function setupIpcHandlers(
   const activateColumn = (columnId: string): void => {
     if (win.isDestroyed() || !viewRegistry.has(columnId)) return
     activeColumnId = columnId
+    // Phase 8: bring the newly-active column on-screen if it was scrolled into an overflow rail
+    // (sidebar/header/rail-tab/keyboard selection all funnel through here).
+    revealColumn(columnId)
     win.webContents.send(CHANNELS.ACTIVE_CHANGED, activeColumnId)
   }
 
@@ -363,6 +367,13 @@ export function setupIpcHandlers(
   ipcMain.handle(CHANNELS.SET_ACTIVE_COLUMN, (event, columnId: string) => {
     if (win.isDestroyed() || event.sender !== win.webContents) return
     activateColumn(columnId)
+  })
+
+  // Phase 8: ◀▶ overflow rail buttons shift the visible column window by ±1 (no active change).
+  ipcMain.handle(CHANNELS.SCROLL_COLUMNS, (event, delta: unknown) => {
+    if (win.isDestroyed() || event.sender !== win.webContents) return
+    if (delta !== 1 && delta !== -1) return
+    scrollColumnWindow(delta)
   })
 
   ipcMain.handle(CHANNELS.GO_BACK, (event, columnId: string) => {
@@ -434,6 +445,8 @@ export function setupIpcHandlers(
           .sort((a, b) => a.order - b.order)
           .findIndex((a) => a.id === columnId)
         addColumn(updated, insertIndex === -1 ? undefined : insertIndex)
+        // Phase 8: scroll the re-shown column into view (without stealing the active selection).
+        revealColumn(columnId)
       }
     } else {
       // Destroys the WebContentsView but leaves the persisted session on disk intact.
@@ -503,6 +516,9 @@ export function setupIpcHandlers(
       isVisible: true,
     })
     addColumn(account)
+    // Phase 8: a newly added column appends at the right end — make it active so it's auto-revealed
+    // (the window scrolls so the new column is visible, like opening a new browser tab).
+    activateColumn(account.id)
     broadcastAccounts(win)
   })
 
