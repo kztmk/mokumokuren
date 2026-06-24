@@ -1,4 +1,4 @@
-import { ipcMain, type BrowserWindow } from 'electron'
+import { ipcMain, net, type BrowserWindow } from 'electron'
 import { CHANNELS } from '../shared/channels'
 import {
   clearSecret,
@@ -153,7 +153,9 @@ export async function checkSubscription(): Promise<AiState> {
   const controller = new AbortController()
   const t = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   try {
-    const res = await fetch(CHECK_URL, {
+    // Electron main では net.fetch を使う（OS/企業プロキシ設定を経由する。グローバル fetch =
+    // undici はプロキシを迂回するため、プロキシ環境下で接続に失敗しうる）。
+    const res = await net.fetch(CHECK_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ unlockKey }),

@@ -48,7 +48,7 @@ export function AiPanel({
   const [genError, setGenError] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
-  const canGenerate = aiState.available && aiState.hasGeminiKey && !generating
+  const canGenerate = aiState.available && aiState.hasGeminiKey && !generating && !!activeService
 
   const handleSaveUnlock = async (): Promise<void> => {
     const key = unlockInput.trim()

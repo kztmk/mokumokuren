@@ -85,14 +85,15 @@ function buildUserPrompt(platform: string, keyword: string): string {
 
 type GeminiPostsShape = { posts: { text: string }[] }
 
-// ```json フェンス除去＋型ガードして Draft[] に変換（postApi.ts のパースを踏襲）。
+// JSON 抽出＋型ガードして Draft[] に変換。lightモデルは指示しても ```json フェンスや前後の
+// 会話文（「以下が下書きです:」等）を混ぜることがあるため、最初の { から最後の } までを取り出して
+// その手の混入に強くする（フェンス除去だけだと JSON.parse が落ちる）。
 function parseDrafts(raw: string): Draft[] {
-  let cleaned = raw.trim()
-  if (cleaned.startsWith('```json')) cleaned = cleaned.replace(/^```json\s*/, '')
-  else if (cleaned.startsWith('```')) cleaned = cleaned.replace(/^```\s*/, '')
-  if (cleaned.endsWith('```')) cleaned = cleaned.replace(/\s*```$/, '')
+  const cleaned = raw.trim()
+  const match = cleaned.match(/\{[\s\S]*\}/)
+  const jsonText = match ? match[0] : cleaned
 
-  const parsed: unknown = JSON.parse(cleaned)
+  const parsed: unknown = JSON.parse(jsonText)
   if (
     typeof parsed === 'object' &&
     parsed !== null &&
