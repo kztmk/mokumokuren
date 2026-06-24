@@ -102,7 +102,7 @@ function isPostsShape(parsed: unknown): parsed is GeminiPostsShape {
 // 末尾の余分な `}`）を巻き込まずに、本物の JSON オブジェクト候補を左から順に列挙できる。
 // ジェネレータでオンデマンド生成するので、呼び出し側が最初の候補で成立した時点で以降の
 // スキャン/slice（各 `{"text":...}` ×48件など）を行わずに済む。
-function* balancedObjectCandidates(s: string): Generator<string> {
+function* balancedObjectCandidates(s: string): IterableIterator<string> {
   for (let start = s.indexOf('{'); start >= 0; start = s.indexOf('{', start + 1)) {
     let depth = 0
     let inStr = false
