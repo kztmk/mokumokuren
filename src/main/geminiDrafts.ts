@@ -150,16 +150,17 @@ function parseDrafts(raw: string): Draft[] {
   }
 
   // クリーンな順に試し、成功した時点で返す（後段の重い処理を走らせない）。
-  // 1. ```json フェンスの中身
+  // 1. ```json フェンスがあればその中身。無ければ文字列全体（フェンスがあると全体は ``` を
+  //    含み JSON.parse が必ず失敗するため試さない）。
   const fence = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/i)
   if (fence) {
     const res = tryParse(fence[1].trim())
     if (res) return res
+  } else {
+    const whole = tryParse(cleaned)
+    if (whole) return whole
   }
-  // 2. 文字列全体（前後に何も無ければここで成立。バランス括弧スキャンを回避できる）
-  const whole = tryParse(cleaned)
-  if (whole) return whole
-  // 3. 左から順のバランス括弧オブジェクト（ここで初めて O(n^2) スキャンを行う）
+  // 2. 左から順のバランス括弧オブジェクト（ここで初めて O(n^2) スキャンを行う）
   for (const candidate of balancedObjectCandidates(cleaned)) {
     const res = tryParse(candidate)
     if (res) return res
