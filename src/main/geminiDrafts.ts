@@ -85,16 +85,8 @@ function buildUserPrompt(platform: string, keyword: string): string {
 
 type GeminiPostsShape = { posts: { text: string }[] }
 
-// JSON 抽出＋型ガードして Draft[] に変換。lightモデルは指示しても ```json フェンスや前後の
-// 会話文（「以下が下書きです:」等）を混ぜることがあるため、最初の { から最後の } までを取り出して
-// その手の混入に強くする（フェンス除去だけだと JSON.parse が落ちる）。
-function parseDrafts(raw: string): Draft[] {
-  const cleaned = raw.trim()
-  const match = cleaned.match(/\{[\s\S]*\}/)
-  const jsonText = match ? match[0] : cleaned
-
-  const parsed: unknown = JSON.parse(jsonText)
-  if (
+function isPostsShape(parsed: unknown): parsed is GeminiPostsShape {
+  return (
     typeof parsed === 'object' &&
     parsed !== null &&
     'posts' in parsed &&
@@ -102,13 +94,65 @@ function parseDrafts(raw: string): Draft[] {
     (parsed as GeminiPostsShape).posts.every(
       (item) => typeof item === 'object' && item !== null && typeof item.text === 'string'
     )
-  ) {
-    const now = Date.now()
-    return (parsed as GeminiPostsShape).posts.map((post, index) => ({
-      id: `${now}-${index}`,
-      text: post.text,
-      adopted: false,
-    }))
+  )
+}
+
+// 各 `{` 位置から、文字列リテラル（とエスケープ）を考慮して対応する `}` までのバランスの取れた
+// 部分文字列を取り出す。greedy な /\{[\s\S]*\}/ と違い、文中の余計な波括弧（例:「{keyword}」や
+// 末尾の余分な `}`）を巻き込まずに、本物の JSON オブジェクト候補を左から順に列挙できる。
+function balancedObjectCandidates(s: string): string[] {
+  const out: string[] = []
+  for (let start = s.indexOf('{'); start >= 0; start = s.indexOf('{', start + 1)) {
+    let depth = 0
+    let inStr = false
+    let esc = false
+    for (let i = start; i < s.length; i++) {
+      const ch = s[i]
+      if (inStr) {
+        if (esc) esc = false
+        else if (ch === '\\') esc = true
+        else if (ch === '"') inStr = false
+      } else if (ch === '"') inStr = true
+      else if (ch === '{') depth++
+      else if (ch === '}') {
+        depth--
+        if (depth === 0) {
+          out.push(s.slice(start, i + 1))
+          break
+        }
+      }
+    }
+  }
+  return out
+}
+
+// JSON 抽出＋型ガードして Draft[] に変換。lightモデルは指示しても ```json フェンスや前後の
+// 会話文（「以下が下書きです:」等、余計な波括弧を含むことも）を混ぜることがある。クリーンな順に
+// 候補を試す: (1) ```json フェンスの中身 → (2) 文字列全体 → (3) 左から順のバランス括弧オブジェクト。
+// 各候補は JSON.parse＋形ガードを通り、最初に成立したものを採用する。
+function parseDrafts(raw: string): Draft[] {
+  const cleaned = raw.trim()
+  const candidates: string[] = []
+  const fence = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fence) candidates.push(fence[1].trim())
+  candidates.push(cleaned)
+  candidates.push(...balancedObjectCandidates(cleaned))
+
+  for (const candidate of candidates) {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(candidate)
+    } catch {
+      continue
+    }
+    if (isPostsShape(parsed)) {
+      const now = Date.now()
+      return parsed.posts.map((post, index) => ({
+        id: `${now}-${index}`,
+        text: post.text,
+        adopted: false,
+      }))
+    }
   }
   throw new Error('APIレスポンスの形式が不正です。')
 }
