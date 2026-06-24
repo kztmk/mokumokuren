@@ -56,6 +56,15 @@ export const COMPOSE_URL: Record<ServiceName, string> = {
   threads: '/intent/post',
 }
 
+// Compose route that accepts a `?text=` query param to PREFILL the editor (used by AI「採用」).
+// All three are official web intents that honor `text`. X's plain /compose/post does not reliably
+// prefill, so the text path uses /intent/tweet instead; bluesky/threads match COMPOSE_URL.
+export const COMPOSE_TEXT_URL: Record<ServiceName, string> = {
+  x: '/intent/tweet',
+  bluesky: '/intent/compose',
+  threads: '/intent/post',
+}
+
 // Canonical per-service origin. Single source of truth shared by the main process (startup
 // loadURL, navigation/compose URL building) so the base URLs can't drift between files.
 export const SNS_URLS: Record<ServiceName, string> = {
@@ -107,10 +116,26 @@ export interface ColumnDescriptor {
   borderW: number
 }
 
+// Phase 8: a column that is currently scrolled off-screen and represented only by a vertical tab
+// in the left/right overflow rail (its WebContentsView is hidden). Lighter than ColumnDescriptor —
+// the renderer looks up unread/avatar/active state from its own maps.
+export interface OverflowTab {
+  accountId: string
+  service: ServiceName
+  username: string | null
+}
+
 export interface ColumnLayoutSnapshot {
+  // Only the columns currently visible in the viewport (a contiguous window of the live columns).
   columns: ColumnDescriptor[]
   sidebarW: number
   headerH: number
+  // Live columns scrolled off the left / right edge, in order. Rendered as vertical tab rails.
+  overflowLeft: OverflowTab[]
+  overflowRight: OverflowTab[]
+  // Width of each overflow rail (0 when that side is rendered without a rail; the arrays being
+  // empty is the real signal). Shared so the renderer positions columns/rails consistently.
+  railW: number
 }
 
 // The full set of accounts (visible and hidden), broadcast to the renderer so the sidebar can
@@ -124,3 +149,55 @@ export interface AccountSummary {
   isVisible: boolean
   order: number
 }
+
+export type UpdateState =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'not-available'
+  | 'error'
+  | 'unsupported'
+
+export interface UpdateStatus {
+  state: UpdateState
+  version?: string
+  percent?: number
+  message?: string
+}
+
+// Phase 7: AI 下書き（虎威ゲート + BYOK Gemini）。main の toraiGate.ts / geminiDrafts.ts と同形。
+export type AiReason =
+  | 'ok'
+  | 'no-unlock-key'
+  | 'inactive'
+  | 'invalid-key'
+  | 'error'
+  | 'unavailable'
+  | 'checking'
+
+export interface AiState {
+  available: boolean
+  reason: AiReason
+  hasUnlockKey: boolean
+  hasGeminiKey: boolean
+  cached?: boolean
+  checkedAt?: string
+  nextRefreshAt?: string
+  message?: string
+}
+
+export interface Draft {
+  id: string
+  text: string
+  adopted: boolean
+}
+
+export type GenerateResult =
+  | { ok: true; drafts: Draft[] }
+  | {
+      ok: false
+      code: 'no-key' | 'not-subscribed' | 'blocked' | 'parse' | 'api' | 'unavailable'
+      message: string
+    }

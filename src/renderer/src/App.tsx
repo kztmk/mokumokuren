@@ -1,12 +1,17 @@
 import { useState, useEffect, useRef } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { ColumnHeader } from './components/ColumnHeader'
+import { ColumnRail } from './components/ColumnRail'
+import { AiPanel } from './components/AiPanel'
 import {
   ACTIVE_BORDER_COLOR,
   type AccountSummary,
+  type AiState,
   type ColumnDescriptor,
   type MenuKey,
+  type OverflowTab,
   type ServiceName,
+  type UpdateStatus,
 } from './services'
 
 const HEADER_H = 40
@@ -15,11 +20,24 @@ type AccountInfo = { username: string | null; avatarUrl: string | null; loggedIn
 
 function App(): React.JSX.Element {
   const [columns, setColumns] = useState<ColumnDescriptor[]>([])
+  const [overflowLeft, setOverflowLeft] = useState<OverflowTab[]>([])
+  const [overflowRight, setOverflowRight] = useState<OverflowTab[]>([])
+  const [railW, setRailW] = useState(48)
   const [accounts, setAccounts] = useState<AccountSummary[]>([])
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
   const [navStates, setNavStates] = useState<Record<string, NavState>>({})
   const [accountInfos, setAccountInfos] = useState<Record<string, AccountInfo>>({})
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({})
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: 'idle' })
+  const [aiState, setAiState] = useState<AiState>({
+    available: false,
+    reason: 'checking',
+    hasUnlockKey: false,
+    hasGeminiKey: false,
+  })
+  const [aiOpen, setAiOpen] = useState(false)
+  // In-app updates are macOS-only (Windows is managed by the Microsoft Store).
+  const updatesSupported = window.electron?.process?.platform === 'darwin'
   // Ref (not a local var) so the once-only guard survives StrictMode unmount/remount.
   const hasSetInitialActive = useRef(false)
   // Mirror of activeColumnId readable inside the (empty-deps) IPC callbacks below, which would
@@ -41,7 +59,18 @@ function App(): React.JSX.Element {
     const unsubscribers = [
       window.electronAPI.onColumnLayout((snap) => {
         setColumns(snap.columns)
-        if (snap.columns.length === 0) {
+        setOverflowLeft(snap.overflowLeft)
+        setOverflowRight(snap.overflowRight)
+        setRailW(snap.railW)
+        // The full set of live columns in order = left overflow ++ visible ++ right overflow.
+        // Phase 8: `snap.columns` is only the visible window, so active-column existence and the
+        // initial selection must be computed against this full list, not just the visible slice.
+        const allIds = [
+          ...snap.overflowLeft.map((t) => t.accountId),
+          ...snap.columns.map((c) => c.accountId),
+          ...snap.overflowRight.map((t) => t.accountId),
+        ]
+        if (allIds.length === 0) {
           // All columns gone — allow re-initialization if a layout arrives later.
           hasSetInitialActive.current = false
           setActive(null)
@@ -49,19 +78,17 @@ function App(): React.JSX.Element {
         }
         if (!hasSetInitialActive.current) {
           hasSetInitialActive.current = true
-          const initialColumnId = snap.columns[0].accountId
+          const initialColumnId = allIds[0]
           setActive(initialColumnId)
           window.electronAPI.setActiveColumn(initialColumnId)
           return
         }
-        // The active column may have been removed (e.g. column close in a later phase). Fall
-        // back to the first column so the selection never points at a non-existent id. IPC stays
-        // outside any state updater to keep it single-fire under StrictMode.
-        const activeStillExists = snap.columns.some(
-          (c) => c.accountId === activeColumnIdRef.current
-        )
+        // The active column may have been removed (column close). Fall back to the first column so
+        // the selection never points at a non-existent id. IPC stays outside any state updater to
+        // keep it single-fire under StrictMode.
+        const activeStillExists = allIds.includes(activeColumnIdRef.current ?? '')
         if (!activeStillExists) {
-          const nextActive = snap.columns[0].accountId
+          const nextActive = allIds[0]
           setActive(nextActive)
           window.electronAPI.setActiveColumn(nextActive)
         }
@@ -73,6 +100,14 @@ function App(): React.JSX.Element {
 
       window.electronAPI.onUnreadChanged((unread) => {
         setUnreadCounts((prev) => ({ ...prev, [unread.columnId]: unread.count }))
+      }),
+
+      window.electronAPI.onUpdateStatus((status) => {
+        setUpdateStatus(status)
+      }),
+
+      window.electronAPI.onAiState((state) => {
+        setAiState(state)
       }),
 
       window.electronAPI.onActiveChanged((columnId) => {
@@ -105,6 +140,11 @@ function App(): React.JSX.Element {
     // this here (rather than relying on the page-load event) avoids dropping the initial state if
     // the broadcast would otherwise beat listener registration.
     window.electronAPI.rendererReady()
+    // Pull the current AI gate state once (the gate may not broadcast until its first check).
+    window.electronAPI.getAiState().then(setAiState)
+    // Run the startup update check now that the UPDATE_STATUS listener is registered (main no longer
+    // checks at setup time, which would emit before the renderer could receive it). mac-only.
+    if (updatesSupported) window.electronAPI.checkForUpdates()
 
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
   }, [])
@@ -138,13 +178,39 @@ function App(): React.JSX.Element {
     window.electronAPI.setColumnVisible(columnId, true)
   }
 
-  const handleComposePost = (service: ServiceName): void => {
-    window.electronAPI.composePost(service)
+  // text を渡すと作成画面を prefill（AI「採用」）。無しなら空エディタ（サイドバーの投稿ボタン）。
+  const handleComposePost = (service: ServiceName, text?: string): void => {
+    window.electronAPI.composePost(service, text)
+  }
+
+  // Phase 8: ◀▶ overflow rail buttons shift the visible column window by ±1.
+  const handleScrollColumns = (delta: number): void => {
+    window.electronAPI.scrollColumns(delta)
+  }
+
+  const handleOpenAi = (): void => {
+    // Hide column WebContentsViews so the renderer DOM panel shows on top, then revalidate.
+    window.electronAPI.setAiOverlay(true)
+    window.electronAPI.checkSubscription()
+    setAiOpen(true)
+  }
+
+  const handleCloseAi = (): void => {
+    setAiOpen(false)
+    window.electronAPI.setAiOverlay(false)
   }
 
   const handleRequestAddAccount = (): void => {
     // Main shows a service-picker dialog, then creates the account + column.
     window.electronAPI.requestAddAccount()
+  }
+
+  const handleCheckForUpdates = (): void => {
+    window.electronAPI.checkForUpdates()
+  }
+
+  const handleQuitAndInstall = (): void => {
+    window.electronAPI.quitAndInstall()
   }
 
   const handleColumnDragStart = (columnId: string): void => {
@@ -166,6 +232,9 @@ function App(): React.JSX.Element {
     window.electronAPI.reorderColumns(ids)
   }
 
+  const activeColumn = columns.find((c) => c.accountId === activeColumnId) ?? columns[0] ?? null
+  const activeService: ServiceName | null = activeColumn?.service ?? null
+
   return (
     <>
       <Sidebar
@@ -178,7 +247,47 @@ function App(): React.JSX.Element {
         onShowColumn={handleShowColumn}
         onComposePost={handleComposePost}
         onRequestAddAccount={handleRequestAddAccount}
+        updatesSupported={updatesSupported}
+        updateStatus={updateStatus}
+        onCheckForUpdates={handleCheckForUpdates}
+        onQuitAndInstall={handleQuitAndInstall}
+        aiAvailable={aiState.available}
+        onOpenAi={handleOpenAi}
       />
+      {aiOpen && (
+        <AiPanel
+          aiState={aiState}
+          activeService={activeService}
+          onClose={handleCloseAi}
+          onComposePost={handleComposePost}
+        />
+      )}
+      {overflowLeft.length > 0 && (
+        <ColumnRail
+          side="left"
+          tabs={overflowLeft}
+          width={railW}
+          leftOffset={72}
+          activeColumnId={activeColumnId}
+          accountInfos={accountInfos}
+          unreadCounts={unreadCounts}
+          onScroll={handleScrollColumns}
+          onSelect={handleSetActive}
+        />
+      )}
+      {overflowRight.length > 0 && (
+        <ColumnRail
+          side="right"
+          tabs={overflowRight}
+          width={railW}
+          leftOffset={72}
+          activeColumnId={activeColumnId}
+          accountInfos={accountInfos}
+          unreadCounts={unreadCounts}
+          onScroll={handleScrollColumns}
+          onSelect={handleSetActive}
+        />
+      )}
       {columns.map((col) => {
         const isActive = col.accountId === activeColumnId
         const navState = navStates[col.accountId] ?? { canGoBack: false, canGoForward: false }

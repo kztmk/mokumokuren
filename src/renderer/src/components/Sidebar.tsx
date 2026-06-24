@@ -4,6 +4,7 @@ import {
   type ColumnDescriptor,
   type MenuKey,
   type ServiceName,
+  type UpdateStatus,
   NAV_MAP,
   SERVICE_META,
   isMenuDisabled,
@@ -41,6 +42,12 @@ type SidebarProps = {
   onShowColumn: (columnId: string) => void
   onComposePost: (service: ServiceName) => void
   onRequestAddAccount: () => void
+  updatesSupported: boolean
+  updateStatus: UpdateStatus
+  onCheckForUpdates: () => void
+  onQuitAndInstall: () => void
+  aiAvailable: boolean
+  onOpenAi: () => void
 }
 
 export function Sidebar({
@@ -53,6 +60,12 @@ export function Sidebar({
   onShowColumn,
   onComposePost,
   onRequestAddAccount,
+  updatesSupported,
+  updateStatus,
+  onCheckForUpdates,
+  onQuitAndInstall,
+  aiAvailable,
+  onOpenAi,
 }: SidebarProps): React.JSX.Element {
   const activeColumn = columns.find((c) => c.accountId === activeColumnId) ?? columns[0] ?? null
   const activeService: ServiceName | null = activeColumn?.service ?? null
@@ -62,6 +75,92 @@ export function Sidebar({
   const activeInfo = activeColumn ? accountInfos[activeColumn.accountId] : null
   const activeUsername =
     activeInfo?.username ?? (activeInfo?.loggedIn === false ? null : activeColumn?.username) ?? null
+
+  // Presentation for the update control (glyph / tooltip / click action) per update state.
+  const upd = updateStatus
+  const updateView: {
+    glyph: string
+    title: string
+    bg: string
+    color: string
+    fontSize: number
+    action: 'check' | 'restart' | 'none'
+  } = (() => {
+    switch (upd.state) {
+      case 'checking':
+        return {
+          glyph: '⟳',
+          title: 'アップデートを確認中…',
+          bg: 'transparent',
+          color: 'var(--chrome-text-muted)',
+          fontSize: 18,
+          action: 'none',
+        }
+      case 'available':
+        return {
+          glyph: '↓',
+          title: `アップデート${upd.version ? ' v' + upd.version : ''} を取得中…`,
+          bg: 'transparent',
+          color: 'var(--chrome-text)',
+          fontSize: 18,
+          action: 'none',
+        }
+      case 'downloading':
+        return {
+          glyph: `${upd.percent ?? 0}`,
+          title: `ダウンロード中 ${upd.percent ?? 0}%`,
+          bg: 'transparent',
+          color: 'var(--chrome-text)',
+          fontSize: 12,
+          action: 'none',
+        }
+      case 'downloaded':
+        return {
+          glyph: '⟲',
+          title: `再起動して更新${upd.version ? ' v' + upd.version : ''}`,
+          bg: '#00BA7C',
+          color: '#fff',
+          fontSize: 18,
+          action: 'restart',
+        }
+      case 'error':
+        return {
+          glyph: '↻',
+          title: `更新確認に失敗${upd.message ? ': ' + upd.message : ''}（クリックで再試行）`,
+          bg: 'transparent',
+          color: 'var(--chrome-text-muted)',
+          fontSize: 18,
+          action: 'check',
+        }
+      case 'not-available':
+        return {
+          glyph: '↻',
+          title: '最新です（クリックで再確認）',
+          bg: 'transparent',
+          color: 'var(--chrome-text-muted)',
+          fontSize: 18,
+          action: 'check',
+        }
+      case 'unsupported':
+        return {
+          glyph: '↻',
+          title: 'アップデートは配布版でのみ確認できます',
+          bg: 'transparent',
+          color: 'var(--chrome-text-disabled)',
+          fontSize: 18,
+          action: 'check',
+        }
+      default:
+        return {
+          glyph: '↻',
+          title: 'アップデートを確認',
+          bg: 'transparent',
+          color: 'var(--chrome-text-muted)',
+          fontSize: 18,
+          action: 'check',
+        }
+    }
+  })()
 
   return (
     <div
@@ -123,14 +222,17 @@ export function Sidebar({
           })}
       </nav>
 
-      {/* Account icon list — scrolls vertically when there are more accounts than fit. */}
+      {/* Account icon list — scrolls vertically when there are more accounts than fit.
+          overflowY:auto forces overflowX to auto too (CSS), which would clip the active icon's
+          orange glow to a square. The horizontal/top padding gives the box-shadow room inside the
+          scrollport so it renders as a full soft ring. */}
       <div
         style={{
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           gap: 8,
-          paddingBottom: 8,
+          padding: '6px 10px 8px',
           minHeight: 0,
           overflowY: 'auto',
         }}
@@ -323,6 +425,74 @@ export function Sidebar({
           +
         </button>
       </div>
+
+      {/* Update control (macOS only; Windows updates via the Microsoft Store) */}
+      {updatesSupported && (
+        <button
+          title={updateView.title}
+          onClick={() => {
+            if (updateView.action === 'restart') onQuitAndInstall()
+            else if (updateView.action === 'check') onCheckForUpdates()
+          }}
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 18,
+            border: upd.state === 'downloaded' ? 'none' : '1px solid var(--chrome-border)',
+            background: updateView.bg,
+            color: updateView.color,
+            cursor: updateView.action === 'none' ? 'default' : 'pointer',
+            fontSize: updateView.fontSize,
+            fontWeight: 'bold',
+            marginBottom: 12,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        >
+          {updateView.glyph}
+        </button>
+      )}
+
+      {/* AI draft button — always opens the panel (where keys are registered); the green dot
+          signals that the 虎威 gate is currently active (AI generation usable). */}
+      <button
+        title={aiAvailable ? 'AI 下書き（利用可）' : 'AI 下書き（設定が必要）'}
+        onClick={onOpenAi}
+        style={{
+          position: 'relative',
+          width: 48,
+          height: 48,
+          borderRadius: 24,
+          border: 'none',
+          background: 'transparent',
+          color: 'var(--chrome-text)',
+          cursor: 'pointer',
+          fontSize: 22,
+          marginBottom: 8,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        🤖
+        {aiAvailable && (
+          <span
+            style={{
+              position: 'absolute',
+              bottom: 6,
+              right: 6,
+              width: 10,
+              height: 10,
+              borderRadius: 5,
+              background: '#00BA7C',
+              border: '2px solid var(--sidebar-bg)',
+            }}
+          />
+        )}
+      </button>
 
       {/* Post button */}
       <button

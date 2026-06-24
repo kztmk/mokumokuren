@@ -1,10 +1,10 @@
 {
   "name": "mokumokuren",
   "version": "1.0.0",
-  "description": "An Electron application with React and TypeScript",
+  "description": "複数のSNS(X / Bluesky / Threads)をアカウントごとに分離して同時閲覧する Electron ビューア",
   "main": "./out/main/index.js",
-  "author": "example.com",
-  "homepage": "https://electron-vite.org",
+  "author": "kztmk",
+  "homepage": "https://github.com/kztmk/mokumokuren",
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",
@@ -13,6 +13,7 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
+    "dev:preview": "cross-env TORAI_FUNCTIONS_BASE=https://asia-northeast1-torai-preview.cloudfunctions.net electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir",
@@ -23,7 +24,9 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
-    "electron-store": "8.2.0"
+    "@google/generative-ai": "^0.24.1",
+    "electron-store": "8.2.0",
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",
@@ -33,6 +36,7 @@
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "cross-env": "^10.1.0",
     "electron": "42.0.0",
     "electron-builder": "^26.15.2",
     "electron-vite": "^5.0.0",

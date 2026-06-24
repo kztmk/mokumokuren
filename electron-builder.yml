@@ -1,43 +1,78 @@
-appId: com.electron.app
-productName: mokumokuren_scaffold
+appId: com.kztmk.mokumokuren # TODO: confirm reverse-domain bundle id (used for macOS bundle / notarization)
+productName: mokumokuren
 directories:
   buildResources: build
 files:
   - '!**/.vscode/*'
   - '!src/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
-  - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
+  - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md,RELEASE.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
 asarUnpack:
   - resources/**
+
+# ── Windows: Microsoft Store (MSIX/appx) ────────────────────────────────────
+# Built unsigned in CI; the Microsoft Store signs the package on ingestion, so no code-signing
+# certificate is needed here. The identity fields below come from Partner Center AFTER reserving
+# the app name (Partner Center → your app → Product management → Product identity). Until they are
+# filled, the appx build is for local testing only and won't be accepted by the Store.
 win:
-  executableName: mokumokuren_scaffold
-nsis:
-  artifactName: ${name}-${version}-setup.${ext}
-  shortcutName: ${productName}
-  uninstallDisplayName: ${productName}
-  createDesktopShortcut: always
+  executableName: mokumokuren
+  target:
+    - appx
+appx:
+  applicationId: mokumokuren # alphanumeric, must start with a letter; no dots
+  displayName: mokumokuren
+  identityName: PUBLISHER.mokumokuren # TODO: from Partner Center → Product identity → "Package/Identity/Name"
+  publisher: CN=00000000-0000-0000-0000-000000000000 # TODO: from Partner Center → "Package/Identity/Publisher"
+  publisherDisplayName: PUBLISHER_DISPLAY_NAME # TODO: from Partner Center → "Package/Properties/PublisherDisplayName"
+  backgroundColor: '#000000'
+  languages:
+    - ja-JP
+    - en-US
+
+# ── macOS: Developer ID signing + notarization → GitHub Releases ────────────
 mac:
+  category: public.app-category.social-networking
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  # Notarize with notarytool. Credentials are supplied via CI env:
+  #   APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID  (see RELEASE.md)
+  notarize: true
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.
     - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
     - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
-  notarize: false
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    - target: zip # for future electron-updater; harmless otherwise
+      arch:
+        - arm64
+        - x64
 dmg:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: ${name}-${version}-${arch}.${ext}
+
+# ── Linux (not part of the release CI; build locally via `npm run build:linux`) ─
 linux:
   target:
     - AppImage
-    - snap
     - deb
-  maintainer: electronjs.org
+  maintainer: kztmk
   category: Utility
 appImage:
   artifactName: ${name}-${version}.${ext}
+
 npmRebuild: false
+
+# macOS dmg/zip are published to GitHub Releases (Windows goes to the Store, not here).
 publish:
-  provider: generic
-  url: https://example.com/auto-updates
+  provider: github
+  owner: kztmk
+  repo: mokumokuren
