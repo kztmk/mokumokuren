@@ -132,27 +132,37 @@ function balancedObjectCandidates(s: string): string[] {
 // 各候補は JSON.parse＋形ガードを通り、最初に成立したものを採用する。
 function parseDrafts(raw: string): Draft[] {
   const cleaned = raw.trim()
-  const candidates: string[] = []
-  const fence = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  if (fence) candidates.push(fence[1].trim())
-  candidates.push(cleaned)
-  candidates.push(...balancedObjectCandidates(cleaned))
 
-  for (const candidate of candidates) {
+  const tryParse = (str: string): Draft[] | null => {
     let parsed: unknown
     try {
-      parsed = JSON.parse(candidate)
+      parsed = JSON.parse(str)
     } catch {
-      continue
+      return null
     }
-    if (isPostsShape(parsed)) {
-      const now = Date.now()
-      return parsed.posts.map((post, index) => ({
-        id: `${now}-${index}`,
-        text: post.text,
-        adopted: false,
-      }))
-    }
+    if (!isPostsShape(parsed)) return null
+    const now = Date.now()
+    return parsed.posts.map((post, index) => ({
+      id: `${now}-${index}`,
+      text: post.text,
+      adopted: false,
+    }))
+  }
+
+  // クリーンな順に試し、成功した時点で返す（後段の重い処理を走らせない）。
+  // 1. ```json フェンスの中身
+  const fence = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fence) {
+    const res = tryParse(fence[1].trim())
+    if (res) return res
+  }
+  // 2. 文字列全体（前後に何も無ければここで成立。バランス括弧スキャンを回避できる）
+  const whole = tryParse(cleaned)
+  if (whole) return whole
+  // 3. 左から順のバランス括弧オブジェクト（ここで初めて O(n^2) スキャンを行う）
+  for (const candidate of balancedObjectCandidates(cleaned)) {
+    const res = tryParse(candidate)
+    if (res) return res
   }
   throw new Error('APIレスポンスの形式が不正です。')
 }

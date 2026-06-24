@@ -119,13 +119,16 @@ export function applyLayout(): void {
     const x = colAreaX + j * colW
     // The last visible column absorbs the rounding remainder so the row fills the area exactly.
     const w = j === n - 1 ? colAreaW - j * colW : colW
-    if (!view.webContents.isDestroyed()) view.setVisible(true)
-    view.setBounds({
-      x: x + BORDER_W,
-      y: HEADER_H + BORDER_W,
-      width: Math.max(0, w - 2 * BORDER_W),
-      height: Math.max(0, height - 2 * BORDER_W),
-    })
+    // Guard both calls: setBounds/setVisible on a destroyed webContents (e.g. a crashed view) throws.
+    if (!view.webContents.isDestroyed()) {
+      view.setVisible(true)
+      view.setBounds({
+        x: x + BORDER_W,
+        y: HEADER_H + BORDER_W,
+        width: Math.max(0, w - 2 * BORDER_W),
+        height: Math.max(0, height - 2 * BORDER_W),
+      })
+    }
 
     return {
       ...descriptor,
