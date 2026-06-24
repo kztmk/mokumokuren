@@ -100,8 +100,9 @@ function isPostsShape(parsed: unknown): parsed is GeminiPostsShape {
 // 各 `{` 位置から、文字列リテラル（とエスケープ）を考慮して対応する `}` までのバランスの取れた
 // 部分文字列を取り出す。greedy な /\{[\s\S]*\}/ と違い、文中の余計な波括弧（例:「{keyword}」や
 // 末尾の余分な `}`）を巻き込まずに、本物の JSON オブジェクト候補を左から順に列挙できる。
-function balancedObjectCandidates(s: string): string[] {
-  const out: string[] = []
+// ジェネレータでオンデマンド生成するので、呼び出し側が最初の候補で成立した時点で以降の
+// スキャン/slice（各 `{"text":...}` ×48件など）を行わずに済む。
+function* balancedObjectCandidates(s: string): IterableIterator<string> {
   for (let start = s.indexOf('{'); start >= 0; start = s.indexOf('{', start + 1)) {
     let depth = 0
     let inStr = false
@@ -117,13 +118,12 @@ function balancedObjectCandidates(s: string): string[] {
       else if (ch === '}') {
         depth--
         if (depth === 0) {
-          out.push(s.slice(start, i + 1))
+          yield s.slice(start, i + 1)
           break
         }
       }
     }
   }
-  return out
 }
 
 // JSON 抽出＋型ガードして Draft[] に変換。lightモデルは指示しても ```json フェンスや前後の
